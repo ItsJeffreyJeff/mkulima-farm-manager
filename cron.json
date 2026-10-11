@@ -1,0 +1,8 @@
+[
+  {
+    "name": "vaccination-email-reminders",
+    "cron": "0 9 * * *",
+    "handler": "vaccinationReminderHandler",
+    "timezone": "Africa/Nairobi"
+  }
+]

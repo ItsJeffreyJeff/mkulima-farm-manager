@@ -1,0 +1,93 @@
+[
+  {
+    "name": "Register and retain an animal",
+    "sanity": true,
+    "viewport": "desktop",
+    "covers": [
+      "animal creation",
+      "database persistence",
+      "animal register"
+    ],
+    "description": "Verifies a complete animal profile can be saved and remains visible.",
+    "steps": [
+      "Open Livestock",
+      "Add tag GOAT-001, breed Savanna, sex Buck and date of birth",
+      "Save the record",
+      "Return to Livestock"
+    ],
+    "expected": "GOAT-001 is visible with Savanna and Buck."
+  },
+  {
+    "name": "Record weight and vaccination email reminder",
+    "viewport": "desktop",
+    "covers": [
+      "weight records",
+      "vaccination schedules",
+      "next vaccination date",
+      "email reminder preference"
+    ],
+    "description": "Verifies a vaccination record can include a due date and email reminder settings.",
+    "setup": [
+      "Create animal GOAT-002"
+    ],
+    "steps": [
+      "Open Health and add a Vaccination for GOAT-002",
+      "Set the next vaccination date",
+      "Leave automatic email reminders enabled and confirm the reminder email",
+      "Save and return to Health"
+    ],
+    "expected": "The vaccination record is saved with its due date and email reminder preference."
+  },
+  {
+    "name": "Track income and expenses",
+    "viewport": "desktop",
+    "covers": [
+      "financial records",
+      "income tracking",
+      "expense tracking",
+      "financial totals"
+    ],
+    "description": "Verifies farm money movements can be recorded in the ledger.",
+    "steps": [
+      "Open Finances",
+      "Add a 2500 KSh Feed expense",
+      "Add a 10000 KSh Sales income",
+      "Review the ledger"
+    ],
+    "expected": "Both transactions are visible and the net movement is 7500 KSh."
+  },
+  {
+    "name": "Record mortality and update status",
+    "viewport": "mobile",
+    "covers": [
+      "mortality tracking",
+      "farm events",
+      "animal status"
+    ],
+    "description": "Verifies mortality is recorded as an event while the animal history is retained.",
+    "setup": [
+      "Create animal GOAT-003"
+    ],
+    "steps": [
+      "Open Events",
+      "Add a Mortality event for GOAT-003",
+      "Open Livestock and edit GOAT-003 status to Dead"
+    ],
+    "expected": "GOAT-003 remains listed as Dead and the mortality event remains visible."
+  },
+  {
+    "name": "Reject incomplete animal",
+    "viewport": "mobile",
+    "covers": [
+      "required-field validation",
+      "invalid-write guardrail"
+    ],
+    "description": "Verifies required animal identification fields block incomplete saves.",
+    "steps": [
+      "Open Add animal",
+      "Leave Tag, Breed and Date of birth empty",
+      "Submit the form"
+    ],
+    "expected": "The form blocks the save and shows required-field validation."
+  }
+]
