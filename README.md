@@ -7,4 +7,3 @@
 4. Deploy. Email reminders need `RESEND_API_KEY` and `RESEND_FROM_EMAIL`; they run daily at 9:00 AM Nairobi time.
 
 Local dev: copy `.env.example` to `.env`, then `npm install && npm run dev`.
-Deploy test

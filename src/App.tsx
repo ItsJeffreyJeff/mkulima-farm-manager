@@ -82,7 +82,12 @@ export default function App() {
     [authUser, setAuthUser] = useState<any>(null),
     [authChecked, setAuthChecked] = useState(false),
     [authBusy, setAuthBusy] = useState(false),
-    [authEmail, setAuthEmail] = useState(''),
+    [authEmail, setAuthEmail] = useState(() => { try { return localStorage.getItem('mkulima_email') || ''; } catch { return ''; } }),
+    [rememberEmail, setRememberEmail] = useState(true),
+    [authMode, setAuthMode] = useState<'signin' | 'forgot'>('signin'),
+    [authInfo, setAuthInfo] = useState(''),
+    [recovering, setRecovering] = useState(auth.isRecovery),
+    [newPass, setNewPass] = useState(''),
     [authPass, setAuthPass] = useState(''),
     [adminOverview, setAdminOverview] = useState<any>(null),
     [adminUsers, setAdminUsers] = useState<any[]>([]),
@@ -98,7 +103,7 @@ export default function App() {
     [modal, setModal] = useState(''),
     [animal, setAnimal] = useState<Animal>(blankAnimal),
     [form, setForm] = useState<any>({}),
-    [error, setError] = useState(''),
+    [error, setError] = useState(auth.linkError),
     [mobile, setMobile] = useState(false),
     [search, setSearch] = useState('');
   async function load() {
@@ -154,10 +159,37 @@ export default function App() {
         }).catch(() => setError('Could not load administrator activity.'));
     }
   }, [page, authUser]);
+  useEffect(() => auth.onPasswordRecovery(() => setRecovering(true)), []);
+  async function sendReset() {
+    setAuthBusy(true); setError(''); setAuthInfo('');
+    try {
+      await auth.resetPassword(authEmail.trim());
+      setAuthInfo('If that email has an account, a reset link is on its way. Check your inbox and spam folder.');
+    } catch (e: any) {
+      setError(e?.message || 'Could not send the reset email. Try again in a minute.');
+    } finally { setAuthBusy(false); }
+  }
+  async function savePassword(e: any) {
+    e.preventDefault(); setError('');
+    if (newPass.length < 6) { setError('Use at least 6 characters.'); return; }
+    setAuthBusy(true);
+    try {
+      await auth.updatePassword(newPass);
+      history.replaceState(null, '', window.location.pathname);
+      const user = await auth.getUser();
+      const profile = await api.get('/api/me');
+      setAuthUser({ ...user, ...profile.data.user });
+      await load();
+      setNewPass(''); setRecovering(false);
+    } catch (e: any) {
+      setError(e?.message || 'Could not update the password. The link may have expired, so request a new one.');
+    } finally { setAuthBusy(false); setAuthChecked(true); }
+  }
   async function signIn(mode: 'signin' | 'signup') {
     setAuthBusy(true); setError('');
     try {
       await auth.signIn({ email: authEmail.trim(), password: authPass, mode });
+      try { if (rememberEmail) localStorage.setItem('mkulima_email', authEmail.trim()); else localStorage.removeItem('mkulima_email'); } catch { /* ignore */ }
       const user = await auth.getUser();
       const profile = await api.get('/api/me');
       setAuthUser({ ...user, ...profile.data.user });
@@ -295,6 +327,20 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(u);
   }
+  if (recovering) return (
+    <div className="min-h-screen bg-stone-50 flex items-center justify-center p-5">
+      <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl shadow-sm p-5 sm:p-8 text-center">
+        <img src="/resources/mkulima-logo.png" alt="Mkulima Management System" className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-4" />
+        <h1 className="text-2xl font-black text-emerald-900">Set a new password</h1>
+        <p className="text-slate-500 mt-2 mb-6">Choose a new password for your account.</p>
+        {error && <div className="text-left bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 mb-4">{error}</div>}
+        <form onSubmit={savePassword} className="text-left space-y-3">
+          <input type="password" name="password" required minLength={6} placeholder="New password (6+ characters)" value={newPass} onChange={e => setNewPass(e.target.value)} className="w-full border rounded-xl px-3 py-3" autoComplete="new-password" />
+          <button disabled={authBusy} className="w-full rounded-xl bg-emerald-700 text-white font-bold py-3 disabled:opacity-60">{authBusy ? 'Saving…' : 'Save new password'}</button>
+        </form>
+      </div>
+    </div>
+  );
   if (!authChecked) return <div className="min-h-screen grid place-items-center bg-stone-50"><div className="text-center text-slate-500">Checking your session…</div></div>;
   if (!authUser) return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center p-5">
@@ -303,12 +349,26 @@ export default function App() {
         <h1 className="text-2xl font-black text-emerald-900">Mkulima Management System</h1>
         <p className="text-slate-500 mt-2 mb-6">Sign in or create an account to manage your farm records securely.</p>
         {error && <div className="text-left bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 mb-4">{error}</div>}
-        <form onSubmit={e => { e.preventDefault(); signIn('signin'); }} className="text-left space-y-3">
-          <input type="email" required placeholder="Email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full border rounded-xl px-3 py-3" autoComplete="email" />
-          <input type="password" required minLength={6} placeholder="Password (6+ characters)" value={authPass} onChange={e => setAuthPass(e.target.value)} className="w-full border rounded-xl px-3 py-3" autoComplete="current-password" />
-          <button disabled={authBusy} className="w-full rounded-xl bg-emerald-700 text-white font-bold py-3 disabled:opacity-60">{authBusy ? 'Please wait…' : 'Sign in'}</button>
-          <button type="button" disabled={authBusy} onClick={() => signIn('signup')} className="w-full rounded-xl border border-emerald-700 text-emerald-800 font-bold py-3 disabled:opacity-60">Create account</button>
-        </form>
+        {authInfo && <div className="text-left bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-3 mb-4">{authInfo}</div>}
+        {authMode === 'signin' ? (
+          <form onSubmit={e => { e.preventDefault(); signIn('signin'); }} className="text-left space-y-3">
+            <input type="email" name="email" required placeholder="Email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full border rounded-xl px-3 py-3" autoComplete="username" />
+            <input type="password" name="password" required minLength={6} placeholder="Password (6+ characters)" value={authPass} onChange={e => setAuthPass(e.target.value)} className="w-full border rounded-xl px-3 py-3" autoComplete="current-password" />
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={rememberEmail} onChange={e => setRememberEmail(e.target.checked)} />Remember my email</label>
+              <button type="button" className="text-emerald-700 font-semibold" onClick={() => { setAuthMode('forgot'); setError(''); setAuthInfo(''); }}>Forgot password?</button>
+            </div>
+            <button disabled={authBusy} className="w-full rounded-xl bg-emerald-700 text-white font-bold py-3 disabled:opacity-60">{authBusy ? 'Please wait…' : 'Sign in'}</button>
+            <button type="button" disabled={authBusy} onClick={() => signIn('signup')} className="w-full rounded-xl border border-emerald-700 text-emerald-800 font-bold py-3 disabled:opacity-60">Create account</button>
+          </form>
+        ) : (
+          <form onSubmit={e => { e.preventDefault(); sendReset(); }} className="text-left space-y-3">
+            <p className="text-sm text-slate-600">Enter your email and we will send you a link to choose a new password.</p>
+            <input type="email" name="email" required placeholder="Email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full border rounded-xl px-3 py-3" autoComplete="username" />
+            <button disabled={authBusy} className="w-full rounded-xl bg-emerald-700 text-white font-bold py-3 disabled:opacity-60">{authBusy ? 'Sending…' : 'Send reset link'}</button>
+            <button type="button" className="w-full text-emerald-700 font-semibold py-2" onClick={() => { setAuthMode('signin'); setError(''); setAuthInfo(''); }}>Back to sign in</button>
+          </form>
+        )}
         <p className="text-xs text-slate-500 mt-4">Your farm records are private to your account.</p>
       </div>
     </div>

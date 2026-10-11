@@ -1,5 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
+// Read before the Supabase client clears the URL hash
+const hash = typeof window !== 'undefined' ? window.location.hash : '';
+const isRecovery = /type=recovery/.test(hash);
+const linkError = /error_description=/.test(hash)
+  ? decodeURIComponent((hash.match(/error_description=([^&]+)/)?.[1] || '').replace(/\+/g, ' '))
+  : '';
+
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
   import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -86,6 +93,21 @@ export const api = {
 };
 
 export const auth = {
+  isRecovery,
+  linkError,
+  async resetPassword(email: string): Promise<void> {
+    if (!email) throw new Error('Enter your email address first.');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if (error) throw error;
+  },
+  async updatePassword(password: string): Promise<void> {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+  },
+  onPasswordRecovery(cb: () => void): () => void {
+    const { data } = supabase.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY') cb(); });
+    return () => data.subscription.unsubscribe();
+  },
   async getUser(): Promise<any> { return sessionUser(); },
   async signIn(o: { email: string; password: string; mode: 'signin' | 'signup' }): Promise<void> {
     if (!o.email || !o.password) throw new Error('Enter your email and password.');
