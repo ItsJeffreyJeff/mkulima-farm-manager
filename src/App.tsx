@@ -34,7 +34,6 @@ type Animal = {
   source: string;
   status: string;
   notes: string;
-  photo?: string;
   matingDate?: string;
   expectedDueDate?: string;
   origin?: string;
@@ -55,7 +54,6 @@ const blankAnimal: Animal = {
   source: '',
   status: 'Active',
   notes: '',
-  photo: '',
   matingDate: '',
   expectedDueDate: '',
   origin: 'Farm Born',
@@ -801,21 +799,6 @@ export default function App() {
                 v={animal.source}
                 c={v => setAnimal({ ...animal, source: v })}
               />
-              <label className="text-sm font-semibold md:col-span-2">
-                Animal picture
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={async e => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const data = await resizeImage(file);
-                    setAnimal({ ...animal, photo: data });
-                  }}
-                  className="mt-1 w-full border rounded-xl px-3 py-2 font-normal bg-white"
-                />
-                {animal.photo && <img src={animal.photo} alt="Animal" className="mt-3 h-32 w-32 object-cover rounded-2xl border" />}
-              </label>
               {['Doe','Ewe','Cow','Hen','Female'].includes(animal.sex) && (
                 <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                   <div className="font-bold text-amber-900 mb-3">Female breeding record</div>
@@ -1101,7 +1084,7 @@ function About() {
         <p className="text-slate-300 mt-4 max-w-3xl leading-7">Mkulima Farm Manager is a digital farm management system designed to help farmers keep accurate records, monitor their animals, manage breeding and health activities, and understand the financial performance of their farm.</p>
       </div>
       <div className="grid md:grid-cols-2 gap-5">
-        <InfoCard title="🐐 Livestock management" text="Register goats, sheep, cattle and other livestock with tags, names, breeds, sex, photos, origin, status and available birth information. Track animals born on the farm separately from animals purchased from outside." />
+        <InfoCard title="🐐 Livestock management" text="Register goats, sheep, cattle and other livestock with tags, names, breeds, sex, origin, status and available birth information. Track animals born on the farm separately from animals purchased from outside." />
         <InfoCard title="🐔 Poultry management" text="Manage poultry by batch rather than individual birds. Record batch name/number, bird type, breed or strain, hatching date, bird numbers, purpose, source and notes." />
         <InfoCard title="❤️ Breeding & reproduction" text="Record mating dates and expected due dates for female animals, together with breeding, pregnancy, birth and other important farm events." />
         <InfoCard title="💉 Health & vaccination" text="Maintain vaccination, deworming, treatment and veterinary records, including the next due date so important health activities are not forgotten." />
@@ -1195,7 +1178,6 @@ function Animals(p: any) {
           <thead className="bg-stone-50">
             <tr>
               {[
-                'Photo',
                 'Tag',
                 'Name',
                 'Species',
@@ -1211,15 +1193,11 @@ function Animals(p: any) {
                   {x}
                 </th>
               ))}
-              {(p.onEdit || p.onDelete) && <th className="text-left p-4 text-slate-500">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {p.animals.map((a: Animal) => (
               <tr className="border-t" key={a.id}>
-                <td className="p-4">
-                  {a.photo ? <img src={a.photo} alt={a.tag} className="h-12 w-12 object-cover rounded-xl border" /> : <div className="h-12 w-12 rounded-xl bg-stone-100 flex items-center justify-center text-xs text-slate-400">No photo</div>}
-                </td>
                 <td className="p-4 font-bold">{a.tag}</td>
                 <td className="p-4">{a.name || '—'}</td>
                 <td className="p-4">{a.species}</td>
@@ -1282,6 +1260,7 @@ function Table(p: any) {
                   {h}
                 </th>
               ))}
+              {(p.onEdit || p.onDelete) && <th className="text-left p-4 text-slate-500">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -1367,29 +1346,6 @@ function AnimalSelect(p: any) {
       </select>
     </label>
   );
-}
-async function resizeImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const max = 700;
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return reject(new Error('Image processing failed'));
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.78));
-      };
-      img.onerror = () => reject(new Error('Invalid image'));
-      img.src = String(reader.result);
-    };
-    reader.onerror = () => reject(reader.error || new Error('Could not read image'));
-    reader.readAsDataURL(file);
-  });
 }
 function Submit() {
   return (
