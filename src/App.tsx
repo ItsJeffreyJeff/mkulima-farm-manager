@@ -620,6 +620,8 @@ export default function App() {
             <Table
               title="Health & vaccination"
               button="Add health record"
+              onEdit={(i: number) => { setForm(health[i]); setModal('health'); }}
+              onDelete={(i: number) => del('/api/health/', health[i].id)}
               click={() => {
                 setForm({
                   date: new Date().toISOString().slice(0, 10),
@@ -719,7 +721,7 @@ export default function App() {
               : modal === 'weight'
                 ? (form.id ? 'Edit weight' : 'Record weight')
                 : modal === 'health'
-                  ? 'Health / vaccination record'
+                  ? (form.id ? 'Edit health record' : 'Health / vaccination record')
                   : modal === 'event'
                     ? (form.id ? 'Edit event' : 'Breeding / farm event')
                     : (form.id ? 'Edit financial record' : 'Financial record')
