@@ -639,7 +639,7 @@ export default function App() {
               ]}
               rows={health.map(x => [
                 dateText(x.date),
-                animals.find(a => a.id === x.animalId)?.tag || '—',
+                x.animalId === 'ALL' ? 'All animals' + (x.animalCount ? ' (' + x.animalCount + ')' : '') : animals.find(a => a.id === x.animalId)?.tag || '—',
                 x.type,
                 x.vaccine || '—',
                 dateText(x.nextDue),
@@ -904,9 +904,10 @@ export default function App() {
               className="grid md:grid-cols-2 gap-4"
             >
               <AnimalSelect
+                allowAll
                 animals={animals}
                 v={form.animalId}
-                c={v => setForm({ ...form, animalId: v })}
+                c={v => setForm({ ...form, animalId: v, animalCount: v === 'ALL' ? animals.filter(a => a.status === 'Active').length : undefined })}
               />
               <Field
                 l="Date"
@@ -1353,6 +1354,7 @@ function AnimalSelect(p: any) {
         className="mt-1 w-full border rounded-xl px-3 py-2 bg-white font-normal"
       >
         <option value="">Select animal</option>
+        {p.allowAll && <option value="ALL">All active animals</option>}
         {p.animals.map((a: Animal) => (
           <option key={a.id} value={a.id}>
             {a.tag} · {a.breed}
