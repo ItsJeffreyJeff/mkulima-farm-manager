@@ -7,3 +7,6 @@
 4. Deploy. Email reminders need `RESEND_API_KEY` and `RESEND_FROM_EMAIL`; they run daily at 9:00 AM Nairobi time.
 
 Local dev: copy `.env.example` to `.env`, then `npm install && npm run dev`.
+
+## Marketplace
+Run `supabase/marketplace.sql` once in the Supabase SQL Editor (creates the listings table and the public `listing-photos` bucket). Set `VITE_LISTING_FEE` and `VITE_PAY_INSTRUCTIONS` in Vercel. Admins approve or reject listings from Marketplace > Review queue.

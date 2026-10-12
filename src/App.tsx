@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api, auth } from './lib/backend';
+import Marketplace from './Marketplace';
 import {
   Home,
   PawPrint,
@@ -17,6 +18,7 @@ import {
   LogOut,
   Users,
   Milk,
+  Store,
   UserPlus,
   Database,
   Wheat,
@@ -289,6 +291,7 @@ export default function App() {
     ['Finances', CircleDollarSign],
     ['Production', Milk],
     ['Feed', Wheat],
+    ['Marketplace', Store],
     ['Reports', FileBarChart],
     ['About', Info],
     ...(authUser?.role === 'admin' ? [['Admin', Users] as any] : []),
@@ -507,6 +510,7 @@ export default function App() {
           {page === 'Reports' && (
             <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed }} />
           )}
+          {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'About' && <About />}
           {page === 'Admin' && authUser.role === 'admin' && (
             <div className="space-y-6">
@@ -1101,6 +1105,7 @@ function About() {
         <InfoCard title="💉 Health & vaccination" text="Maintain vaccination, deworming, treatment and veterinary records, including the next due date so important health activities are not forgotten." />
         <InfoCard title="⚖️ Growth & weights" text="Record animal weights over time to monitor growth, performance and changes in body condition." />
         <InfoCard title="💰 Farm finances" text="Track farm income and expenses. When you register a purchased animal, its purchase price is automatically recorded as an animal-purchase expense." />
+        <InfoCard title="🛒 Marketplace" text="Post animals, produce and equipment for sale with photos. Listings go live after you pay a small listing fee and an admin approves them, which keeps fake adverts out." />
         <InfoCard title="🥛 Milk & egg production" text="Record daily milk by animal and eggs by poultry batch, and see monthly totals at a glance." />
         <InfoCard title="🌾 Feed tracking" text="Log feed type, quantity and cost. When you enter a cost, it is automatically added to your expenses as a feed expense." />
         <InfoCard title="📊 Reports & exports" text="Review income, expenses, production and feed for any date range, print a summary, or export any record set to CSV for Excel." />
