@@ -17,6 +17,8 @@ import {
   LogOut,
   Users,
   Milk,
+  UserPlus,
+  Database,
   Wheat,
   FileBarChart,
 } from 'lucide-react';
@@ -156,7 +158,7 @@ export default function App() {
           setAdminOverview(overview.data);
           setAdminUsers(users.data.items || []);
           setAdminActivity(activity.data.items || []);
-        }).catch(() => setError('Could not load administrator activity.'));
+        }).catch((e: any) => setError('Could not load administrator activity.' + (String(e?.message || '').startsWith('Admin:') ? ' ' + e.message : '')));
     }
   }, [page, authUser]);
   useEffect(() => auth.onPasswordRecovery(() => setRecovering(true)), []);
@@ -513,12 +515,14 @@ export default function App() {
             <div className="space-y-6">
               <div><h2 className="text-2xl font-black">Platform administration</h2><p className="text-slate-500">Monitor account growth and recent activity across Mkulima. Farm record contents remain private to each farmer.</p></div>
               <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                <Card label="Registered users" value={String(adminOverview?.users ?? '—')} />
-                <Card label="Active today" value={String(adminOverview?.activeToday ?? '—')} />
-                <Card label="Logged activities" value={String(adminOverview?.totalActivity ?? '—')} />
-                <Card label="Farm record types" value={String(Object.keys(adminOverview?.recordCounts || {}).length || '—')} />
+                <StatCard icon={Users} label="Users" value={String(adminOverview?.users ?? '—')} />
+                <StatCard icon={UserPlus} label="New this month" value={String(adminOverview?.signupsByMonth?.slice(-1)[0]?.count ?? '—')} />
+                <StatCard icon={Activity} label="Active today" value={String(adminOverview?.activeToday ?? '—')} />
+                <StatCard icon={Database} label="Farm records (total)" value={String(adminOverview?.totalRecords ?? '—')} />
               </div>
               <div className="bg-white border rounded-2xl overflow-hidden"><div className="p-5 border-b"><h3 className="font-bold text-lg">Registered accounts</h3><p className="text-sm text-slate-500">Most recently active accounts (up to 100).</p></div><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-stone-50"><tr>{['Name','Email','Role','Joined','Last active'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead><tbody>{adminUsers.map((u,i) => <tr key={u.email + i} className="border-t"><td className="p-3">{u.name || '—'}</td><td className="p-3">{u.email || '—'}</td><td className="p-3"><span className="rounded-full bg-emerald-50 text-emerald-800 px-2 py-1">{u.role}</span></td><td className="p-3">{u.firstSeen ? new Date(u.firstSeen).toLocaleString() : '—'}</td><td className="p-3">{u.lastSeen ? new Date(u.lastSeen).toLocaleString() : '—'}</td></tr>)}</tbody></table>{!adminUsers.length && <div className="p-6 text-slate-500">No registered accounts recorded yet.</div>}</div></div>
+              <AdminMonthly o={adminOverview} />
+              <AdminCharts o={adminOverview} />
               <div className="grid xl:grid-cols-3 gap-4">{Object.entries(adminOverview?.recordCounts || {}).map(([name,count]) => <div key={name} className="bg-white border rounded-xl p-4"><div className="text-xs uppercase text-slate-500">{name}</div><div className="text-2xl font-black mt-1">{String(count)}</div></div>)}</div>
               <div className="bg-white border rounded-2xl overflow-hidden"><div className="p-5 border-b"><h3 className="font-bold text-lg">Recent activity</h3><p className="text-sm text-slate-500">Sign-ins and record changes across the platform.</p></div><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-stone-50"><tr>{['Time','User','Action','Section','Details'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead><tbody>{adminActivity.map((a,i) => <tr key={a.timestamp + i} className="border-t"><td className="p-3 whitespace-nowrap">{a.timestamp ? new Date(a.timestamp).toLocaleString() : '—'}</td><td className="p-3">{a.name || a.email || '—'}</td><td className="p-3">{a.action}</td><td className="p-3">{a.section}</td><td className="p-3">{a.details || '—'}</td></tr>)}</tbody></table>{!adminActivity.length && <div className="p-6 text-slate-500">Activity will appear as users sign in and manage records.</div>}</div></div>
             </div>
@@ -1463,6 +1467,156 @@ function Reports(p: any) {
             <button key={k} onClick={() => downloadCSV(k, p.data[k])} className="border rounded-xl px-3 py-2 text-sm font-semibold flex gap-2"><Download size={14} />{k}</button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniChart({ data, kind, color }: { data: { label: string; value: number }[]; kind: 'bar' | 'line'; color: string }) {
+  const W = 600, H = 190, L = 34, B = 24, T = 10, R = 8;
+  const max = Math.max(1, ...data.map(d => d.value));
+  const nice = Math.max(4, Math.ceil(max / 4) * 4);
+  const iw = W - L - R, ih = H - T - B, n = data.length;
+  const x = (i: number) => L + (n <= 1 ? iw / 2 : (i * iw) / (n - 1));
+  const bw = Math.max(2, iw / Math.max(n, 1) - 2);
+  const y = (v: number) => T + ih - (v / nice) * ih;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(nice * f));
+  const labelIdx = n <= 1 ? [0] : n <= 12 ? data.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img">
+      {ticks.map(t => (
+        <g key={t}>
+          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e7e5e4" />
+          <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#78716c">{t}</text>
+        </g>
+      ))}
+      {kind === 'bar'
+        ? data.map((d, i) => (
+            <rect key={i} x={L + (i * iw) / n + 1} y={y(d.value)} width={bw} height={Math.max(0, T + ih - y(d.value))} fill={color} rx="2">
+              <title>{d.label}: {d.value}</title>
+            </rect>
+          ))
+        : (
+          <>
+            <polyline fill="none" stroke={color} strokeWidth="2.5" points={data.map((d, i) => `${x(i)},${y(d.value)}`).join(' ')} />
+            {n <= 31 && data.map((d, i) => (
+              <circle key={i} cx={x(i)} cy={y(d.value)} r="3" fill={color}><title>{d.label}: {d.value}</title></circle>
+            ))}
+          </>
+        )}
+      {labelIdx.map(i => (
+        <text key={i} x={kind === 'bar' ? L + (i * iw) / n + bw / 2 : x(i)} y={H - 6} textAnchor={n <= 12 ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={n <= 12 ? 9 : 10} fill="#78716c">{data[i]?.label}</text>
+      ))}
+    </svg>
+  );
+}
+function AdminCharts({ o }: { o: any }) {
+  const [days, setDays] = useState(30);
+  if (!o || !o.signupsByDay) return null;
+  const fmt = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const all = o.signupsByDay as { date: string; count: number }[];
+  const act = (o.activeByDay as { date: string; count: number }[]).slice(-days);
+  const sign = all.slice(-days);
+  let run = (o.usersBeforeRange || 0) + all.slice(0, all.length - days).reduce((s, x) => s + x.count, 0);
+  const cumulative = sign.map(d => ({ label: fmt(d.date), value: (run += d.count) }));
+  const newInRange = sign.reduce((s, d) => s + d.count, 0);
+  const sections = Object.entries(o.sectionCounts || {}).sort((p: any, q: any) => q[1] - p[1]).slice(0, 8) as [string, number][];
+  const topMax = Math.max(1, ...sections.map(s => s[1]));
+  const Panel = (p: { title: string; sub?: string; children: any }) => (
+    <div className="bg-white border rounded-2xl p-4 sm:p-5">
+      <div className="font-bold">{p.title}</div>
+      {p.sub && <div className="text-xs text-slate-500 mb-2">{p.sub}</div>}
+      {p.children}
+    </div>
+  );
+  return (
+    <div className="space-y-4 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-slate-600"><b className="text-slate-900">{newInRange}</b> new {newInRange === 1 ? 'registration' : 'registrations'} in the last {days} days</div>
+        <div className="flex gap-2">
+          {[7, 30, 90].map(d => (
+            <button key={d} onClick={() => setDays(d)} className={'px-3 py-1.5 rounded-xl text-sm font-semibold border ' + (days === d ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'bg-white')}>{d} days</button>
+          ))}
+        </div>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Panel title="New registrations per day" sub="Accounts created each day">
+          <MiniChart kind="bar" color="#10b981" data={sign.map(d => ({ label: fmt(d.date), value: d.count }))} />
+        </Panel>
+        <Panel title="Total registered users" sub="Running total over the period">
+          <MiniChart kind="line" color="#0f766e" data={cumulative} />
+        </Panel>
+        <Panel title="Daily active users" sub="Different people who used the app each day">
+          <MiniChart kind="bar" color="#f59e0b" data={act.map(d => ({ label: fmt(d.date), value: d.count }))} />
+        </Panel>
+        <Panel title="Most used sections" sub="Record changes in the last 90 days">
+          {sections.length ? sections.map(([name, count]) => (
+            <div key={name} className="flex items-center gap-3 text-sm mt-2">
+              <span className="w-24 shrink-0 text-slate-600">{name}</span>
+              <div className="flex-1 bg-stone-100 rounded-full h-3"><div className="bg-emerald-500 h-3 rounded-full" style={{ width: (count / topMax) * 100 + '%' }} /></div>
+              <span className="w-8 text-right font-semibold">{count}</span>
+            </div>
+          )) : <p className="text-sm text-slate-500 mt-2">No activity recorded yet.</p>}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+  return (
+    <div className="bg-white border rounded-2xl p-5">
+      <div className="flex items-center gap-2 text-sm text-slate-500"><Icon size={18} />{label}</div>
+      <div className="text-3xl font-black mt-3">{value}</div>
+    </div>
+  );
+}
+function GroupedBars({ data, aName, bName }: { data: { label: string; a: number; b: number }[]; aName: string; bName: string }) {
+  const W = 600, H = 190, L = 34, B = 24, T = 10, R = 8;
+  const max = Math.max(1, ...data.map(d => Math.max(d.a, d.b)));
+  const nice = Math.max(4, Math.ceil(max / 4) * 4);
+  const iw = W - L - R, ih = H - T - B, n = data.length;
+  const gw = iw / Math.max(n, 1), bw = Math.max(2, (gw - 6) / 2);
+  const y = (v: number) => T + ih - (v / nice) * ih;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(nice * f));
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img">
+        {ticks.map(t => (
+          <g key={t}>
+            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e7e5e4" />
+            <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#78716c">{t}</text>
+          </g>
+        ))}
+        {data.map((d, i) => (
+          <g key={i}>
+            <rect x={L + i * gw + 3} y={y(d.a)} width={bw} height={Math.max(0, T + ih - y(d.a))} fill="#22c55e" rx="2"><title>{d.label} {aName}: {d.a}</title></rect>
+            <rect x={L + i * gw + 3 + bw} y={y(d.b)} width={bw} height={Math.max(0, T + ih - y(d.b))} fill="#f59e0b" rx="2"><title>{d.label} {bName}: {d.b}</title></rect>
+            <text x={L + i * gw + gw / 2} y={H - 6} textAnchor="middle" fontSize="9" fill="#78716c">{d.label}</text>
+          </g>
+        ))}
+      </svg>
+      <div className="flex gap-4 text-sm mt-1">
+        <span className="flex items-center gap-2"><i className="inline-block w-3 h-3 rounded-sm bg-green-500" />{aName}</span>
+        <span className="flex items-center gap-2"><i className="inline-block w-3 h-3 rounded-sm bg-amber-500" />{bName}</span>
+      </div>
+    </div>
+  );
+}
+function AdminMonthly({ o }: { o: any }) {
+  if (!o || !o.signupsByMonth) return null;
+  const fmtM = (m: string) => new Date(m + '-01T00:00:00Z').toLocaleDateString('en-GB', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+  return (
+    <div className="grid lg:grid-cols-2 gap-4 mb-4">
+      <div className="bg-white border rounded-2xl p-4 sm:p-5">
+        <div className="font-bold">Users over time</div>
+        <div className="text-xs text-slate-500 mb-2">New signups per month (last 12 months)</div>
+        <MiniChart kind="line" color="#2563eb" data={(o.signupsByMonth as { month: string; count: number }[]).map(d => ({ label: fmtM(d.month), value: d.count }))} />
+      </div>
+      <div className="bg-white border rounded-2xl p-4 sm:p-5">
+        <div className="font-bold">Records added per month</div>
+        <div className="text-xs text-slate-500 mb-2">Livestock and poultry vs all other records (last 12 months)</div>
+        <GroupedBars aName="Livestock & poultry" bName="Other records" data={(o.recordsByMonth as { month: string; livestock: number; other: number }[]).map(d => ({ label: fmtM(d.month), a: d.livestock, b: d.other }))} />
       </div>
     </div>
   );

@@ -58,7 +58,10 @@ export const api = {
     if (path.startsWith('/api/admin/')) {
       const { data } = await supabase.auth.getSession();
       const r = await fetch('/api/admin?view=' + path.split('/').pop(), { headers: { Authorization: 'Bearer ' + data.session?.access_token } });
-      if (!r.ok) throw new Error('Admin request failed');
+      if (!r.ok) {
+        const j: any = await r.json().catch(() => ({}));
+        throw new Error('Admin: ' + (j.error || 'request failed (' + r.status + ')'));
+      }
       return { data: await r.json() };
     }
     const { kind } = parse(path);
