@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api, auth } from './lib/backend';
 import {
   Home,
@@ -284,7 +284,6 @@ export default function App() {
     ['Farm Born', PawPrint],
     ['Purchased', CircleDollarSign],
     ['Poultry', Activity],
-    ['Weights', Scale],
     ['Health', ShieldCheck],
     ['Events', Activity],
     ['Finances', CircleDollarSign],
@@ -547,6 +546,9 @@ export default function App() {
                 setModal('animal');
               }}
               remove={remove}
+              weights={weights}
+              editWeight={(w: any) => { setForm(w); setModal('weight'); }}
+              deleteWeight={(id: string) => del('/api/weights/', id)}
               weight={id => {
                 setForm({
                   animalId: id,
@@ -564,6 +566,9 @@ export default function App() {
               setSearch={setSearch}
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
+              weights={weights}
+              editWeight={(w: any) => { setForm(w); setModal('weight'); }}
+              deleteWeight={(id: string) => del('/api/weights/', id)}
               weight={id => { setForm({ animalId: id, date: new Date().toISOString().slice(0, 10) }); setModal('weight'); }}
             />
           )}
@@ -575,6 +580,9 @@ export default function App() {
               setSearch={setSearch}
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
+              weights={weights}
+              editWeight={(w: any) => { setForm(w); setModal('weight'); }}
+              deleteWeight={(id: string) => del('/api/weights/', id)}
               weight={id => { setForm({ animalId: id, date: new Date().toISOString().slice(0, 10) }); setModal('weight'); }}
             />
           )}
@@ -596,6 +604,9 @@ export default function App() {
               setSearch={setSearch}
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
+              weights={weights}
+              editWeight={(w: any) => { setForm(w); setModal('weight'); }}
+              deleteWeight={(id: string) => del('/api/weights/', id)}
               weight={id => { setForm({ animalId: id, date: new Date().toISOString().slice(0, 10) }); setModal('weight'); }}
             />
           )}
@@ -1157,6 +1168,8 @@ function Dashboard(p: any) {
   );
 }
 function Animals(p: any) {
+  const [open, setOpen] = useState('');
+  const wOf = (id: string) => (p.weights || []).filter((w: any) => w.animalId === id).sort((x: any, y: any) => String(y.date).localeCompare(String(x.date)));
   return (
     <div className="bg-white border rounded-2xl overflow-hidden">
       <div className="p-5 border-b flex flex-col md:flex-row justify-between gap-3">
@@ -1184,6 +1197,7 @@ function Animals(p: any) {
                 'Breed',
                 'Sex',
                 'DOB',
+                'Latest weight',
                 'Status',
                 'Origin',
                 'Due date',
@@ -1197,13 +1211,18 @@ function Animals(p: any) {
           </thead>
           <tbody>
             {p.animals.map((a: Animal) => (
-              <tr className="border-t" key={a.id}>
-                <td className="p-4 font-bold">{a.tag}</td>
+              <Fragment key={a.id}>
+              <tr className="border-t">
+                <td className="p-4 font-bold whitespace-nowrap">
+                  <button className="mr-2 text-slate-500" aria-label="Show weight history" onClick={() => setOpen(open === a.id ? '' : a.id)}>{open === a.id ? '▾' : '▸'}</button>
+                  {a.tag}
+                </td>
                 <td className="p-4">{a.name || '—'}</td>
                 <td className="p-4">{a.species}</td>
                 <td className="p-4">{a.breed}</td>
                 <td className="p-4">{a.sex}</td>
                 <td className="p-4">{dateText(a.dob)}</td>
+                <td className="p-4 whitespace-nowrap">{wOf(a.id)[0] ? wOf(a.id)[0].weight + ' kg' : '—'}</td>
                 <td className="p-4">{a.status}</td>
                 <td className="p-4">{a.origin || '—'}</td>
                 <td className="p-4">{a.expectedDueDate ? dateText(a.expectedDueDate) : '—'}</td>
@@ -1222,6 +1241,42 @@ function Animals(p: any) {
                   </button>
                 </td>
               </tr>
+              {open === a.id && (
+                <tr className="bg-stone-50">
+                  <td colSpan={11} className="p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <b>Weight history · {a.tag}{a.name ? ' (' + a.name + ')' : ''}</b>
+                      <button onClick={() => p.weight(a.id)} className="bg-emerald-500 px-3 py-1.5 rounded-xl font-bold text-sm">+ Record weight</button>
+                    </div>
+                    {wOf(a.id).length ? (
+                      <div className="overflow-auto">
+                        <table className="w-full text-sm bg-white border rounded-xl">
+                          <thead><tr>{['Date', 'Weight', 'Change', 'Notes', 'Actions'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead>
+                          <tbody>
+                            {wOf(a.id).map((w: any, i: number, list: any[]) => {
+                              const prev = list[i + 1];
+                              const diff = prev ? Number(w.weight) - Number(prev.weight) : null;
+                              return (
+                                <tr key={w.id} className="border-t">
+                                  <td className="p-3 whitespace-nowrap">{dateText(w.date)}</td>
+                                  <td className="p-3 whitespace-nowrap">{w.weight} kg</td>
+                                  <td className="p-3 whitespace-nowrap">{diff === null ? '—' : (diff > 0 ? '+' : '') + Math.round(diff * 100) / 100 + ' kg'}</td>
+                                  <td className="p-3">{w.notes || '—'}</td>
+                                  <td className="p-3 whitespace-nowrap">
+                                    <button className="mr-1 p-2 text-slate-600" aria-label="Edit weight" onClick={() => p.editWeight(w)}><Edit3 size={16} /></button>
+                                    <button className="p-2 text-red-600" aria-label="Delete weight" onClick={() => p.deleteWeight(w.id)}><Trash2 size={16} /></button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : <p className="text-sm text-slate-500">No weights recorded for this animal yet.</p>}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
