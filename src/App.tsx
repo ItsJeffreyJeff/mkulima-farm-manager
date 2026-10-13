@@ -1368,6 +1368,12 @@ function Animals(p: any) {
     </div>
   );
 }
+function PoultryRegister(p: any) {
+  return <div className="bg-white border rounded-2xl overflow-hidden">
+    <div className="p-5 border-b flex flex-col md:flex-row justify-between gap-3"><div><b className="text-lg">Poultry batches</b><p className="text-sm text-slate-500">Track birds by batch instead of individual bird records.</p></div><div className="flex gap-2"><input value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="Search batch, breed…" className="border rounded-xl px-3 py-2" /><button onClick={p.add} className="bg-emerald-500 px-3 py-2 rounded-xl font-bold flex gap-2"><Plus size={16} />Add batch</button></div></div>
+    <div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-stone-50"><tr>{['Batch','Bird type','Breed / strain','Hatching date','Initial birds','Current birds','Purpose','Source','Notes','Actions'].map(h => <th className="text-left p-4 text-slate-500" key={h}>{h}</th>)}</tr></thead><tbody>{p.batches.map((x: PoultryBatch) => <tr className="border-t" key={x.id}><td className="p-4 font-bold">{x.batch}</td><td className="p-4">{x.birdType}</td><td className="p-4">{x.breed}</td><td className="p-4">{dateText(x.hatchDate)}</td><td className="p-4">{x.initialBirds}</td><td className="p-4">{x.currentBirds || x.initialBirds}</td><td className="p-4">{x.purpose || '—'}</td><td className="p-4">{x.source || '—'}</td><td className="p-4">{x.notes || '—'}</td><td className="p-4 flex gap-3"><button onClick={() => p.edit(x)}><Edit3 size={16} /></button><button onClick={() => p.remove(x.id)} className="text-rose-600"><Trash2 size={16} /></button></td></tr>)}</tbody></table>{!p.batches.length && <div className="p-10 text-center text-slate-500">No poultry batches yet.</div>}</div>
+  </div>;
+}
 function Table(p: any) {
   return (
     <div className="bg-white border rounded-2xl overflow-hidden">
