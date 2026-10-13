@@ -23,6 +23,7 @@ import {
   Database,
   Wheat,
   FileBarChart,
+  MoreVertical,
 } from 'lucide-react';
 
 type Animal = {
@@ -541,7 +542,7 @@ export default function App() {
           )}
           {page === 'Livestock' && (
             <Animals
-              title="Livestock register"
+              title="Livestock"
               animals={filtered.filter(a => !['Chicken', 'Other Poultry'].includes(a.species))}
               search={search}
               setSearch={setSearch}
@@ -550,6 +551,9 @@ export default function App() {
                 setModal('animal');
               }}
               remove={remove}
+              health={health}
+              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
+              bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
               editWeight={(w: any) => { setForm(w); setModal('weight'); }}
               deleteWeight={(id: string) => del('/api/weights/', id)}
@@ -570,6 +574,9 @@ export default function App() {
               setSearch={setSearch}
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
+              health={health}
+              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
+              bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
               editWeight={(w: any) => { setForm(w); setModal('weight'); }}
               deleteWeight={(id: string) => del('/api/weights/', id)}
@@ -584,6 +591,9 @@ export default function App() {
               setSearch={setSearch}
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
+              health={health}
+              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
+              bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
               editWeight={(w: any) => { setForm(w); setModal('weight'); }}
               deleteWeight={(id: string) => del('/api/weights/', id)}
@@ -608,6 +618,9 @@ export default function App() {
               setSearch={setSearch}
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
+              health={health}
+              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
+              bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
               editWeight={(w: any) => { setForm(w); setModal('weight'); }}
               deleteWeight={(id: string) => del('/api/weights/', id)}
@@ -1172,128 +1185,166 @@ function Dashboard(p: any) {
     </div>
   );
 }
+const TYPE_STYLE: Record<string, string> = {
+  Buck: 'bg-blue-50 text-blue-700', Doe: 'bg-rose-50 text-rose-700', Ewe: 'bg-fuchsia-50 text-fuchsia-700',
+  Ram: 'bg-indigo-50 text-indigo-700', Cow: 'bg-amber-50 text-amber-700', Bull: 'bg-orange-50 text-orange-700',
+};
+function animalType(a: Animal) {
+  const sex = a.sex || '';
+  if (!['', 'Male', 'Female'].includes(sex)) return sex;
+  const f = sex === 'Female', m = sex === 'Male';
+  if (a.species === 'Goat') return f ? 'Doe' : m ? 'Buck' : 'Goat';
+  if (a.species === 'Sheep') return f ? 'Ewe' : m ? 'Ram' : 'Sheep';
+  if (a.species === 'Cattle') return f ? 'Cow' : m ? 'Bull' : 'Cattle';
+  return a.species || 'Animal';
+}
 function Animals(p: any) {
+  const [tab, setTab] = useState<'Active' | 'Sold' | 'Other'>('Active');
+  const [typeF, setTypeF] = useState('All');
   const [open, setOpen] = useState('');
+  const [menu, setMenu] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
+  const all: Animal[] = p.animals;
+  const inTab = (x: Animal, t: string) => t === 'Active' ? x.status === 'Active' : t === 'Sold' ? x.status === 'Sold' : !['Active', 'Sold'].includes(x.status);
+  const count = (t: string) => all.filter(x => inTab(x, t)).length;
+  const byType: Record<string, number> = {};
+  all.filter(x => x.status === 'Active').forEach(x => { const t = animalType(x); byType[t] = (byType[t] || 0) + 1; });
+  const types = Array.from(new Set(all.map(animalType))).sort();
+  const rows = all.filter(x => inTab(x, tab) && (typeF === 'All' || animalType(x) === typeF));
   const wOf = (id: string) => (p.weights || []).filter((w: any) => w.animalId === id).sort((x: any, y: any) => String(y.date).localeCompare(String(x.date)));
+  const nextVacc = (x: Animal) => {
+    const ds = (p.health || [])
+      .filter((h: any) => String(h.type).toLowerCase() === 'vaccination' && h.nextDue && (h.animalId === x.id || h.animalId === 'ALL'))
+      .map((h: any) => String(h.nextDue).slice(0, 10)).sort();
+    return ds.length ? (ds.find((d: string) => d >= today) || ds[ds.length - 1]) : '';
+  };
+  const health = (x: Animal): [string, string] => {
+    if (x.status !== 'Active') return [x.status, 'bg-stone-100 text-stone-600'];
+    const d = nextVacc(x);
+    if (!d) return ['normal', 'bg-emerald-50 text-emerald-700'];
+    const days = Math.round((Date.parse(d) - Date.parse(today)) / 86400000);
+    if (days < 0) return ['overdue', 'bg-rose-50 text-rose-700'];
+    if (days <= 14) return ['due soon', 'bg-amber-50 text-amber-700'];
+    return ['normal', 'bg-emerald-50 text-emerald-700'];
+  };
+  const TABS: [typeof tab, string][] = [['Active', 'Active'], ['Sold', 'Sold'], ['Other', 'Dead & other']];
   return (
-    <div className="bg-white border rounded-2xl overflow-hidden">
-      <div className="p-5 border-b flex flex-col md:flex-row justify-between gap-3">
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
         <div>
-          <b className="text-lg">{p.title || 'Animal register'}</b>
-          <p className="text-sm text-slate-500">
-            DOB, breed, sex, source and current status.
-          </p>
+          <h2 className="text-3xl font-black">{p.title || 'Livestock'}</h2>
+          <p className="text-slate-500">{count('Active')} active {count('Active') === 1 ? 'animal' : 'animals'}</p>
         </div>
-        <input
-          value={p.search}
-          onChange={e => p.setSearch(e.target.value)}
-          placeholder="Search tag, breed…"
-          className="border rounded-xl px-3 py-2"
-        />
+        <div className="flex gap-2">
+          {p.bulkHealth && <button onClick={p.bulkHealth} className="flex gap-2 items-center bg-white border rounded-xl px-4 py-2.5 font-semibold"><ShieldCheck size={17} />Bulk health</button>}
+          {p.add && <button onClick={p.add} className="flex gap-2 items-center bg-slate-950 text-white rounded-xl px-4 py-2.5 font-bold"><Plus size={17} />Add animal</button>}
+        </div>
       </div>
-      <div className="overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-stone-50">
-            <tr>
-              {[
-                'Tag',
-                'Name',
-                'Species',
-                'Breed',
-                'Sex',
-                'DOB',
-                'Latest weight',
-                'Status',
-                'Origin',
-                'Due date',
-                'Actions',
-              ].map(x => (
-                <th className="text-left p-4 text-slate-500" key={x}>
-                  {x}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {p.animals.map((a: Animal) => (
-              <Fragment key={a.id}>
-              <tr className="border-t">
-                <td className="p-4 font-bold whitespace-nowrap">
-                  <button className="mr-2 text-slate-500" aria-label="Show weight history" onClick={() => setOpen(open === a.id ? '' : a.id)}>{open === a.id ? '▾' : '▸'}</button>
-                  {a.tag}
-                </td>
-                <td className="p-4">{a.name || '—'}</td>
-                <td className="p-4">{a.species}</td>
-                <td className="p-4">{a.breed}</td>
-                <td className="p-4">{a.sex}</td>
-                <td className="p-4">{dateText(a.dob)}</td>
-                <td className="p-4 whitespace-nowrap">{wOf(a.id)[0] ? wOf(a.id)[0].weight + ' kg' : '—'}</td>
-                <td className="p-4">{a.status}</td>
-                <td className="p-4">{a.origin || '—'}</td>
-                <td className="p-4">{a.expectedDueDate ? dateText(a.expectedDueDate) : '—'}</td>
-                <td className="p-4 flex gap-2">
-                  <button title="Weight" onClick={() => p.weight(a.id)}>
-                    <Scale size={16} />
-                  </button>
-                  <button onClick={() => p.edit(a)}>
-                    <Edit3 size={16} />
-                  </button>
-                  <button
-                    onClick={() => p.remove(a.id)}
-                    className="text-rose-600"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
+      {Object.keys(byType).length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5">
+          {Object.entries(byType).sort((x, y) => y[1] - x[1]).map(([t, n]) => (
+            <button key={t} onClick={() => { setTab('Active'); setTypeF(typeF === t ? 'All' : t); }} className={'text-left bg-white border rounded-2xl p-4 sm:p-5 flex items-center gap-3 sm:gap-4 ' + (typeF === t ? 'ring-2 ring-emerald-500' : '')}>
+              <span className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0"><PawPrint size={20} /></span>
+              <span><span className="block text-3xl font-black leading-none">{n}</span><span className="block text-slate-500 mt-1">{t}</span></span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {TABS.map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={'px-4 py-2 rounded-full border font-semibold ' + (tab === k ? 'bg-slate-950 text-white border-slate-950' : 'bg-white')}>{l} ({count(k)})</button>
+        ))}
+      </div>
+      <div className="grid md:grid-cols-[1fr_auto] gap-3 mb-4">
+        <input value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="Search by tag, name, breed…" className="border rounded-xl px-4 py-3 bg-white" />
+        <select value={typeF} onChange={e => setTypeF(e.target.value)} className="border rounded-xl px-4 py-3 bg-white"><option value="All">All types</option>{types.map(t => <option key={t}>{t}</option>)}</select>
+      </div>
+      <div className="bg-white border rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-slate-500">
+                {['Tag ID', 'Type', 'Breed', 'DOB', 'Weight', 'Next vacc.', 'Health', ''].map(h => <th key={h} className="text-left p-4 font-semibold">{h}</th>)}
               </tr>
-              {open === a.id && (
-                <tr className="bg-stone-50">
-                  <td colSpan={11} className="p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                      <b>Weight history · {a.tag}{a.name ? ' (' + a.name + ')' : ''}</b>
-                      <button onClick={() => p.weight(a.id)} className="bg-emerald-500 px-3 py-1.5 rounded-xl font-bold text-sm">+ Record weight</button>
-                    </div>
-                    {wOf(a.id).length ? (
-                      <div className="overflow-auto">
-                        <table className="w-full text-sm bg-white border rounded-xl">
-                          <thead><tr>{['Date', 'Weight', 'Change', 'Notes', 'Actions'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead>
-                          <tbody>
-                            {wOf(a.id).map((w: any, i: number, list: any[]) => {
-                              const prev = list[i + 1];
-                              const diff = prev ? Number(w.weight) - Number(prev.weight) : null;
-                              return (
-                                <tr key={w.id} className="border-t">
-                                  <td className="p-3 whitespace-nowrap">{dateText(w.date)}</td>
-                                  <td className="p-3 whitespace-nowrap">{w.weight} kg</td>
-                                  <td className="p-3 whitespace-nowrap">{diff === null ? '—' : (diff > 0 ? '+' : '') + Math.round(diff * 100) / 100 + ' kg'}</td>
-                                  <td className="p-3">{w.notes || '—'}</td>
-                                  <td className="p-3 whitespace-nowrap">
-                                    <button className="mr-1 p-2 text-slate-600" aria-label="Edit weight" onClick={() => p.editWeight(w)}><Edit3 size={16} /></button>
-                                    <button className="p-2 text-red-600" aria-label="Delete weight" onClick={() => p.deleteWeight(w.id)}><Trash2 size={16} /></button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : <p className="text-sm text-slate-500">No weights recorded for this animal yet.</p>}
-                  </td>
-                </tr>
-              )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-slate-500">No animals here yet.</td></tr>}
+              {rows.map(a => {
+                const t = animalType(a), [hl, hc] = health(a), nv = nextVacc(a), w = wOf(a.id);
+                return (
+                  <Fragment key={a.id}>
+                    <tr className="border-t cursor-pointer hover:bg-stone-50" onClick={() => setOpen(open === a.id ? '' : a.id)}>
+                      <td className="p-4 whitespace-nowrap"><span className="font-mono font-bold bg-stone-100 rounded-lg px-2.5 py-1.5">{a.tag}</span>{a.name && <span className="block text-xs text-slate-500 mt-1">{a.name}</span>}</td>
+                      <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + (TYPE_STYLE[t] || 'bg-stone-100 text-stone-700')}>{t}</span></td>
+                      <td className="p-4">{a.breed || '—'}</td>
+                      <td className="p-4 whitespace-nowrap">{a.dob ? dateText(a.dob) : '--'}</td>
+                      <td className="p-4 whitespace-nowrap">{w[0] ? w[0].weight + ' kg' : '--'}</td>
+                      <td className="p-4 whitespace-nowrap">{nv ? dateText(nv) : '--'}</td>
+                      <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + hc}>{hl}</span></td>
+                      <td className="p-4 relative" onClick={e => e.stopPropagation()}>
+                        <button aria-label="Actions" className="p-2 rounded-lg hover:bg-stone-100" onClick={() => setMenu(menu === a.id ? '' : a.id)}><MoreVertical size={18} /></button>
+                        {menu === a.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenu('')} />
+                            <div className="absolute right-4 top-12 z-20 w-48 bg-white border rounded-xl shadow-lg py-1 text-left">
+                              <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setOpen(a.id); setMenu(''); }}>View details</button>
+                              <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setMenu(''); p.weight(a.id); }}>Record weight</button>
+                              <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setMenu(''); p.edit(a); }}>Edit</button>
+                              <button className="w-full text-left px-4 py-2 hover:bg-stone-50 text-rose-600" onClick={() => { setMenu(''); p.remove(a.id); }}>Delete</button>
+                            </div>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                    {open === a.id && (
+                      <tr className="bg-stone-50">
+                        <td colSpan={8} className="p-4">
+                          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm mb-4">
+                            {([['Species', a.species], ['Sex', a.sex], ['Origin', a.origin || a.source], ['Status', a.status], ['Mating date', a.matingDate ? dateText(a.matingDate) : ''], ['Expected due', a.expectedDueDate ? dateText(a.expectedDueDate) : ''], ['Purchase price', a.purchasePrice ? 'KSh ' + Number(a.purchasePrice).toLocaleString() : ''], ['Notes', a.notes]] as [string, string][]).filter(r => r[1]).map(([k, v]) => (
+                              <div key={k}><div className="text-xs uppercase text-slate-500">{k}</div><div className="font-semibold">{v}</div></div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <b>Weight history</b>
+                            <button onClick={() => p.weight(a.id)} className="bg-emerald-500 px-3 py-1.5 rounded-xl font-bold text-sm">+ Record weight</button>
+                          </div>
+                          {w.length ? (
+                            <div className="overflow-auto">
+                              <table className="w-full text-sm bg-white border rounded-xl">
+                                <thead><tr>{['Date', 'Weight', 'Change', 'Notes', 'Actions'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead>
+                                <tbody>
+                                  {w.map((x: any, i: number, list: any[]) => {
+                                    const prev = list[i + 1];
+                                    const diff = prev ? Number(x.weight) - Number(prev.weight) : null;
+                                    return (
+                                      <tr key={x.id} className="border-t">
+                                        <td className="p-3 whitespace-nowrap">{dateText(x.date)}</td>
+                                        <td className="p-3 whitespace-nowrap">{x.weight} kg</td>
+                                        <td className="p-3 whitespace-nowrap">{diff === null ? '—' : (diff > 0 ? '+' : '') + Math.round(diff * 100) / 100 + ' kg'}</td>
+                                        <td className="p-3">{x.notes || '—'}</td>
+                                        <td className="p-3 whitespace-nowrap">
+                                          <button className="mr-1 p-2 text-slate-600" aria-label="Edit weight" onClick={() => p.editWeight(x)}><Edit3 size={16} /></button>
+                                          <button className="p-2 text-red-600" aria-label="Delete weight" onClick={() => p.deleteWeight(x.id)}><Trash2 size={16} /></button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : <p className="text-sm text-slate-500">No weights recorded for this animal yet.</p>}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
-}
-function PoultryRegister(p: any) {
-  return <div className="bg-white border rounded-2xl overflow-hidden">
-    <div className="p-5 border-b flex flex-col md:flex-row justify-between gap-3"><div><b className="text-lg">Poultry batches</b><p className="text-sm text-slate-500">Track birds by batch instead of individual bird records.</p></div><div className="flex gap-2"><input value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="Search batch, breed…" className="border rounded-xl px-3 py-2" /><button onClick={p.add} className="bg-emerald-500 px-3 py-2 rounded-xl font-bold flex gap-2"><Plus size={16} />Add batch</button></div></div>
-    <div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-stone-50"><tr>{['Batch','Bird type','Breed / strain','Hatching date','Initial birds','Current birds','Purpose','Source','Notes','Actions'].map(h => <th className="text-left p-4 text-slate-500" key={h}>{h}</th>)}</tr></thead><tbody>{p.batches.map((x: PoultryBatch) => <tr className="border-t" key={x.id}><td className="p-4 font-bold">{x.batch}</td><td className="p-4">{x.birdType}</td><td className="p-4">{x.breed}</td><td className="p-4">{dateText(x.hatchDate)}</td><td className="p-4">{x.initialBirds}</td><td className="p-4">{x.currentBirds || x.initialBirds}</td><td className="p-4">{x.purpose || '—'}</td><td className="p-4">{x.source || '—'}</td><td className="p-4">{x.notes || '—'}</td><td className="p-4 flex gap-3"><button onClick={() => p.edit(x)}><Edit3 size={16} /></button><button onClick={() => p.remove(x.id)} className="text-rose-600"><Trash2 size={16} /></button></td></tr>)}</tbody></table>{!p.batches.length && <div className="p-10 text-center text-slate-500">No poultry batches yet.</div>}</div>
-  </div>;
 }
 function Table(p: any) {
   return (
