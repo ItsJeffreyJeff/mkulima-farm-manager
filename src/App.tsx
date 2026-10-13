@@ -24,6 +24,9 @@ import {
   Wheat,
   FileBarChart,
   MoreVertical,
+  Bird,
+  Egg,
+  ShoppingBag,
 } from 'lucide-react';
 
 type Animal = {
@@ -537,6 +540,11 @@ export default function App() {
               expense={expense}
               income={income}
               animals={animals}
+              poultry={poultry}
+              production={production}
+              finance={finance}
+              health={health}
+              name={(() => { const n = String(authUser?.name || String(authUser?.email || '').split('@')[0] || ''); return n.charAt(0).toUpperCase() + n.slice(1); })()}
               setPage={setPage}
             />
           )}
@@ -1141,46 +1149,89 @@ function InfoCard(p: { title: string; text: string }) {
   return <div className="bg-white border rounded-2xl p-6"><h3 className="font-black text-lg">{p.title}</h3><p className="text-slate-600 mt-2 leading-6">{p.text}</p></div>;
 }
 function Dashboard(p: any) {
+  const now = new Date();
+  const hour = now.getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const today = now.toISOString().slice(0, 10);
+  const soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const month = today.slice(0, 7);
+  const birds = (p.poultry || []).reduce((s: number, x: any) => s + Number(x.currentBirds || x.initialBirds || 0), 0);
+  const inMonth = (p.finance || []).filter((x: any) => String(x.date).startsWith(month));
+  const incomeM = inMonth.filter((x: any) => x.type === 'income').reduce((s: number, x: any) => s + Number(x.amount || 0), 0);
+  const spendM = inMonth.filter((x: any) => x.type === 'expense').reduce((s: number, x: any) => s + Number(x.amount || 0), 0);
+  const expecting = p.animals.filter((x: Animal) => x.status === 'Active' && x.expectedDueDate && x.expectedDueDate >= today && x.expectedDueDate <= soon).length;
+  const overdue = (p.health || []).filter((x: any) => x.nextDue && String(x.nextDue).slice(0, 10) < today).length;
+  const sold = p.animals.filter((x: Animal) => x.status === 'Sold').length;
+  const mortality = p.animals.length ? Math.round((p.dead / p.animals.length) * 1000) / 10 : 0;
+  const stats: [any, string, string, string, string, string][] = [
+    [PawPrint, 'bg-emerald-800', String(p.active), 'Animals', 'Individual records', 'Livestock'],
+    [Bird, 'bg-emerald-500', String(birds), 'Poultry', 'Birds across batches', 'Poultry'],
+    [Milk, 'bg-sky-500', sumQty(p.production || [], 'Milk', month) + ' L', 'Milk this month', 'Litres recorded', 'Production'],
+    [Egg, 'bg-yellow-500', String(sumQty(p.production || [], 'Eggs', month)), 'Eggs this month', 'Eggs collected', 'Production'],
+    [CircleDollarSign, 'bg-amber-600', money(incomeM), 'Income this month', 'Sales and other income', 'Finances'],
+    [ShoppingBag, 'bg-rose-400', money(spendM), 'Spend this month', 'Net ' + money(incomeM - spendM), 'Finances'],
+  ];
+  const snap: [any, string, string, string][] = [
+    [PawPrint, String(expecting), 'Expecting', expecting ? 'Births due within 30 days' : 'No near-term births flagged'],
+    [ShieldCheck, String(p.due), 'Health due', 'Next due dates within 30 days'],
+    [Store, String(sold), 'Sold', 'Animals marked as sold'],
+    [Activity, mortality + '%', 'Mortality', p.dead + ' recorded ' + (p.dead === 1 ? 'death' : 'deaths')],
+  ];
+  const actions: [any, string, string, string][] = [
+    [PawPrint, 'Livestock register', 'Add records, track weights and run bulk health actions.', 'Livestock'],
+    [ShieldCheck, 'Health records', 'Vaccination, deworming and treatment schedules.', 'Health'],
+    [CircleDollarSign, 'Record finances', 'Capture sales, expenses and feed purchases.', 'Finances'],
+    [Store, 'Marketplace', 'Advertise animals and produce for sale.', 'Marketplace'],
+  ];
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl bg-slate-950 text-white p-5 sm:p-8">
-        <div className="text-emerald-400 font-bold">
-          LIVESTOCK CONTROL CENTER
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-black mt-2">
-          Know your herd. Grow your farm.
-        </h2>
-        <p className="text-slate-300 mt-2">
-          Birth-to-sale records, health schedules, weight tracking and farm
-          finances in one place.
-        </p>
+      <div>
+        <div className="text-slate-500">{greet}</div>
+        <h2 className="text-3xl sm:text-4xl font-black mt-1">{p.name || 'there'}</h2>
+        <p className="text-slate-500 mt-1">Your farm at a glance.</p>
       </div>
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Card label="Active animals" value={String(p.active)} />
-        <Card label="Mortality" value={String(p.dead)} />
-        <Card label="Health due in 30 days" value={String(p.due)} />
-        <Card label="Total expenses" value={money(p.expense)} />
-      </div>
-      <div className="bg-white border rounded-2xl p-5">
-        <div className="flex justify-between mb-4">
-          <b>Recent animals</b>
-          <button
-            onClick={() => p.setPage('Livestock')}
-            className="text-emerald-700 font-semibold"
-          >
-            View register
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        {stats.map(([Icon, bg, value, label, sub, page]) => (
+          <button key={label} onClick={() => p.setPage(page)} className="text-left bg-white border rounded-2xl p-5 sm:p-6 hover:shadow-md transition-shadow">
+            <span className={'w-14 h-14 rounded-2xl grid place-items-center text-white ' + bg}><Icon size={26} /></span>
+            <div className="text-3xl sm:text-4xl font-black mt-5 leading-none">{value}</div>
+            <div className="text-xs uppercase tracking-widest text-slate-500 mt-2">{label}</div>
+            <div className="border-t mt-4 pt-3 text-slate-600">{sub}</div>
           </button>
-        </div>
-        {p.animals.slice(0, 8).map((a: Animal) => (
-          <div key={a.id} className="border-t py-3 flex justify-between">
-            <span>
-              <b>{a.tag}</b> · {a.breed}
-            </span>
-            <span className="text-sm text-slate-500">
-              {a.sex} · born {dateText(a.dob)}
-            </span>
-          </div>
         ))}
+      </div>
+      <div className="grid xl:grid-cols-[1.5fr_1fr] gap-4">
+        <div className="bg-white border rounded-2xl p-5 sm:p-6">
+          <h3 className="text-xl font-black">Operational snapshot</h3>
+          <p className="text-slate-500 mb-4">Health and breeding signals across your farm</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {snap.map(([Icon, value, label, sub]) => (
+              <div key={label} className="border rounded-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <span className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center"><Icon size={18} /></span>
+                  <span className="text-2xl font-black">{value}</span>
+                </div>
+                <div className="font-bold mt-3">{label}</div>
+                <div className="text-xs text-slate-500 mt-1">{sub}</div>
+              </div>
+            ))}
+          </div>
+          <div className={'mt-4 rounded-2xl px-4 py-3 ' + (overdue ? 'bg-rose-50 text-rose-700' : 'bg-stone-100 text-slate-700')}>
+            {overdue ? overdue + ' health ' + (overdue === 1 ? 'action is' : 'actions are') + ' overdue. Open Health to review.' : 'No urgent livestock alerts right now.'}
+          </div>
+        </div>
+        <div className="bg-white border rounded-2xl p-5 sm:p-6">
+          <h3 className="text-xl font-black">Quick actions</h3>
+          <p className="text-slate-500 mb-4">Jump to the sections you use most</p>
+          <div className="space-y-3">
+            {actions.map(([Icon, title, text, page]) => (
+              <button key={title} onClick={() => p.setPage(page)} className="w-full text-left border rounded-2xl p-4 flex gap-4 items-start hover:bg-stone-50">
+                <span className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0"><Icon size={20} /></span>
+                <span><b>{title} <span className="text-slate-400">&#8599;</span></b><span className="block text-sm text-slate-500 mt-1">{text}</span></span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
