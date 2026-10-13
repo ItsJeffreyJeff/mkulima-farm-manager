@@ -1189,6 +1189,8 @@ const TYPE_STYLE: Record<string, string> = {
   Buck: 'bg-blue-50 text-blue-700', Doe: 'bg-rose-50 text-rose-700', Ewe: 'bg-fuchsia-50 text-fuchsia-700',
   Ram: 'bg-indigo-50 text-indigo-700', Cow: 'bg-amber-50 text-amber-700', Bull: 'bg-orange-50 text-orange-700',
 };
+const SPECIES_ICON: Record<string, string> = { Goat: '🐐', Sheep: '🐑', Cattle: '🐄', Chicken: '🐔', 'Other Poultry': '🦆' };
+const iconOf = (s?: string) => SPECIES_ICON[s || ''] || '🐾';
 function animalType(a: Animal) {
   const sex = a.sex || '';
   if (!['', 'Male', 'Female'].includes(sex)) return sex;
@@ -1201,16 +1203,22 @@ function animalType(a: Animal) {
 function Animals(p: any) {
   const [tab, setTab] = useState<'Active' | 'Sold' | 'Other'>('Active');
   const [typeF, setTypeF] = useState('All');
+  const [speciesF, setSpeciesF] = useState('All');
   const [open, setOpen] = useState('');
   const [menu, setMenu] = useState('');
   const today = new Date().toISOString().slice(0, 10);
   const all: Animal[] = p.animals;
   const inTab = (x: Animal, t: string) => t === 'Active' ? x.status === 'Active' : t === 'Sold' ? x.status === 'Sold' : !['Active', 'Sold'].includes(x.status);
   const count = (t: string) => all.filter(x => inTab(x, t)).length;
-  const byType: Record<string, number> = {};
-  all.filter(x => x.status === 'Active').forEach(x => { const t = animalType(x); byType[t] = (byType[t] || 0) + 1; });
+  const plural = (w: string) => /(sheep|cattle|poultry)$/i.test(w) ? w : w.endsWith('s') ? w : w + 's';
+  const bySpecies: Record<string, Record<string, number>> = {};
+  all.filter(x => x.status === 'Active').forEach(x => {
+    const s = x.species || 'Other', t = animalType(x);
+    bySpecies[s] = bySpecies[s] || {};
+    bySpecies[s][t] = (bySpecies[s][t] || 0) + 1;
+  });
   const types = Array.from(new Set(all.map(animalType))).sort();
-  const rows = all.filter(x => inTab(x, tab) && (typeF === 'All' || animalType(x) === typeF));
+  const rows = all.filter(x => inTab(x, tab) && (speciesF === 'All' || (x.species || 'Other') === speciesF) && (typeF === 'All' || animalType(x) === typeF));
   const wOf = (id: string) => (p.weights || []).filter((w: any) => w.animalId === id).sort((x: any, y: any) => String(y.date).localeCompare(String(x.date)));
   const nextVacc = (x: Animal) => {
     const ds = (p.health || [])
@@ -1240,14 +1248,28 @@ function Animals(p: any) {
           {p.add && <button onClick={p.add} className="flex gap-2 items-center bg-slate-950 text-white rounded-xl px-4 py-2.5 font-bold"><Plus size={17} />Add animal</button>}
         </div>
       </div>
-      {Object.keys(byType).length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5">
-          {Object.entries(byType).sort((x, y) => y[1] - x[1]).map(([t, n]) => (
-            <button key={t} onClick={() => { setTab('Active'); setTypeF(typeF === t ? 'All' : t); }} className={'text-left bg-white border rounded-2xl p-4 sm:p-5 flex items-center gap-3 sm:gap-4 ' + (typeF === t ? 'ring-2 ring-emerald-500' : '')}>
-              <span className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0"><PawPrint size={20} /></span>
-              <span><span className="block text-3xl font-black leading-none">{n}</span><span className="block text-slate-500 mt-1">{t}</span></span>
-            </button>
-          ))}
+      {Object.keys(bySpecies).length > 0 && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5">
+          {Object.entries(bySpecies).map(([sp, tm]) => {
+            const total = Object.values(tm).reduce((s, n) => s + n, 0);
+            const on = speciesF === sp;
+            return (
+              <div key={sp} className={'bg-white border rounded-2xl p-4 sm:p-5 ' + (on ? 'ring-2 ring-emerald-500' : '')}>
+                <button className="w-full text-left flex items-center gap-3" onClick={() => { setTab('Active'); setTypeF('All'); setSpeciesF(on ? 'All' : sp); }}>
+                  <span className="w-12 h-12 rounded-xl bg-emerald-50 grid place-items-center shrink-0 text-3xl leading-none" aria-hidden="true">{iconOf(sp)}</span>
+                  <span>
+                    <span className="block text-xs font-bold tracking-wide text-slate-500 uppercase">{plural(sp)}</span>
+                    <span className="block text-3xl font-black leading-none mt-1">{total}</span>
+                  </span>
+                </button>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {Object.entries(tm).sort((x, y) => y[1] - x[1]).map(([t, n]) => (
+                    <button key={t} onClick={() => { setTab('Active'); setSpeciesF(sp); setTypeF(typeF === t && speciesF === sp ? 'All' : t); }} className={'px-3 py-1 rounded-full text-sm font-semibold ' + (TYPE_STYLE[t] || 'bg-stone-100 text-stone-700')}>{n} {n === 1 ? t : plural(t)}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="flex flex-wrap gap-2 mb-4">
@@ -1275,7 +1297,7 @@ function Animals(p: any) {
                   <Fragment key={a.id}>
                     <tr className="border-t cursor-pointer hover:bg-stone-50" onClick={() => setOpen(open === a.id ? '' : a.id)}>
                       <td className="p-4 whitespace-nowrap"><span className="font-mono font-bold bg-stone-100 rounded-lg px-2.5 py-1.5">{a.tag}</span>{a.name && <span className="block text-xs text-slate-500 mt-1">{a.name}</span>}</td>
-                      <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + (TYPE_STYLE[t] || 'bg-stone-100 text-stone-700')}>{t}</span></td>
+                      <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + (TYPE_STYLE[t] || 'bg-stone-100 text-stone-700')}>{iconOf(a.species)} {t}</span></td>
                       <td className="p-4">{a.breed || '—'}</td>
                       <td className="p-4 whitespace-nowrap">{a.dob ? dateText(a.dob) : '--'}</td>
                       <td className="p-4 whitespace-nowrap">{w[0] ? w[0].weight + ' kg' : '--'}</td>
