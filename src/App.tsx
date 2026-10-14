@@ -339,7 +339,7 @@ export default function App() {
   if (recovering) return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center p-5">
       <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl shadow-sm p-5 sm:p-8 text-center">
-        <img src="/resources/mkulima-logo.png" alt="Mkulima Management System" className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-4" />
+        <img src="/resources/mkulima-logo.png" alt="Mkulima Farm Manager" className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-4" />
         <h1 className="text-2xl font-black text-emerald-900">Set a new password</h1>
         <p className="text-slate-500 mt-2 mb-6">Choose a new password for your account.</p>
         {error && <div className="text-left bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 mb-4">{error}</div>}
@@ -354,8 +354,8 @@ export default function App() {
   if (!authUser) return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center p-5">
       <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl shadow-sm p-5 sm:p-8 text-center">
-        <img src="/resources/mkulima-logo.png" alt="Mkulima Management System" className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-4" />
-        <h1 className="text-2xl font-black text-emerald-900">Mkulima Management System</h1>
+        <img src="/resources/mkulima-logo.png" alt="Mkulima Farm Manager" className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-4" />
+        <h1 className="text-2xl font-black text-emerald-900">Mkulima Farm Manager</h1>
         <p className="text-slate-500 mt-2 mb-6">Sign in or create an account to manage your farm records securely.</p>
         {error && <div className="text-left bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 mb-4">{error}</div>}
         {authInfo && <div className="text-left bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-3 mb-4">{authInfo}</div>}
@@ -392,8 +392,8 @@ export default function App() {
       >
         <div className="flex justify-between mb-8">
           <div className="flex items-center gap-3 min-w-0">
-            <img src="/resources/mkulima-logo.png" alt="Mkulima Management System" className="w-16 h-16 rounded-xl object-contain bg-white shrink-0" />
-            <div className="min-w-0"><b className="text-lg leading-tight text-emerald-400">Mkulima</b><div className="text-xs text-slate-400">Management System</div></div>
+            <img src="/resources/mkulima-logo.png" alt="Mkulima Farm Manager" className="w-16 h-16 rounded-xl object-contain bg-white shrink-0" />
+            <div className="min-w-0"><b className="text-lg leading-tight text-emerald-400">Mkulima</b><div className="text-xs text-slate-400">Farm Manager</div></div>
           </div>
           <button className="md:hidden" onClick={() => setMobile(false)}>
             <X />
@@ -426,7 +426,7 @@ export default function App() {
           </button>
           <img src="/resources/mkulima-logo.png" alt="Mkulima farm animals logo" className="w-10 h-10 sm:w-12 sm:h-12 object-contain rounded-lg bg-white border border-stone-200 p-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-xs text-emerald-700 font-semibold">Mkulima Management System</div>
+            <div className="text-xs text-emerald-700 font-semibold">Mkulima Farm Manager</div>
             <h1 className="font-black text-xl truncate">{page}</h1>
           </div>
           <div className="hidden lg:block text-right mr-2"><div className="text-xs text-slate-500">Signed in as</div><div className="text-sm font-semibold max-w-52 truncate">{authUser.name || authUser.email}</div></div>
