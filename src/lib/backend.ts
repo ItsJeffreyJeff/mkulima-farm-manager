@@ -97,6 +97,10 @@ export const api = {
 
 export const auth = {
   isRecovery,
+  async updateName(name: string): Promise<void> {
+    const { error } = await supabase.auth.updateUser({ data: { name } });
+    if (error) throw error;
+  },
   linkError,
   async resetPassword(email: string): Promise<void> {
     if (!email) throw new Error('Enter your email address first.');

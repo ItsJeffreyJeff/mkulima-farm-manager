@@ -19,7 +19,10 @@ export default async function handler(req: any, res: any) {
   let sent = 0;
   for (const rec of health || []) {
     const r: any = rec.data;
-    if (String(r.type || '').toLowerCase() !== 'vaccination' || !r.nextDue || r.emailReminders === false) continue;
+    const kind = String(r.type || '').toLowerCase();
+    if (!['vaccination', 'deworming'].includes(kind) || !r.nextDue || r.emailReminders === false) continue;
+    const noun = kind === 'deworming' ? 'deworming' : 'vaccination';
+    const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
     const due = String(r.nextDue).slice(0, 10);
     const days = Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
     if (days !== 3 && days !== 0) continue;
@@ -30,8 +33,8 @@ export default async function handler(req: any, res: any) {
     if (!to) continue;
     const a: any = (animals || []).find(x => x.id === r.animalId && x.user_id === rec.user_id)?.data;
     const label = r.animalId === 'ALL' ? 'all animals on the farm' : a ? [a.name, a.tag, a.species].filter(Boolean).join(' · ') : 'your animal';
-    const subject = days === 0 ? 'Vaccination due today - Mkulima Farm Manager' : 'Vaccination reminder - due in 3 days';
-    const html = '<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Vaccination reminder</h2><p>A vaccination for <strong>' + esc(label) + '</strong> is due ' + (days === 0 ? 'today' : 'in 3 days') + '.</p><p><strong>Vaccine:</strong> ' + esc(String(r.vaccine || 'Vaccination')) + '<br/><strong>Due date:</strong> ' + esc(due) + '</p><p>Open Mkulima Farm Manager to review the health record.</p></div>';
+    const subject = days === 0 ? Noun + ' due today - Mkulima Farm Manager' : Noun + ' reminder - due in 3 days';
+    const html = '<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>' + Noun + ' reminder</h2><p>A ' + noun + ' for <strong>' + esc(label) + '</strong> is due ' + (days === 0 ? 'today' : 'in 3 days') + '.</p><p><strong>' + (kind === 'deworming' ? 'Treatment' : 'Vaccine') + ':</strong> ' + esc(String(r.vaccine || Noun)) + '<br/><strong>Due date:</strong> ' + esc(due) + '</p><p>Open Mkulima Farm Manager to review the health record.</p></div>';
     const resp = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject, html }) });
     if (!resp.ok) continue;
     await sb.from('reminder_logs').insert({ key });

@@ -545,6 +545,7 @@ export default function App() {
               finance={finance}
               health={health}
               name={(() => { const n = String(authUser?.name || String(authUser?.email || '').split('@')[0] || ''); return n.charAt(0).toUpperCase() + n.slice(1); })()}
+              onRename={async (n: string) => { await auth.updateName(n); setAuthUser({ ...authUser, name: n }); }}
               setPage={setPage}
             />
           )}
@@ -961,12 +962,12 @@ export default function App() {
                 v={form.nextDue}
                 c={v => setForm({ ...form, nextDue: v })}
               />
-              {form.type === 'Vaccination' && (
+              {['Vaccination', 'Deworming'].includes(form.type) && (
                 <div className="md:col-span-2 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                   <label className="flex items-start gap-3 text-sm font-semibold text-emerald-950">
                     <input type="checkbox" checked={form.emailReminders !== false} onChange={e => setForm({ ...form, emailReminders: e.target.checked })} className="mt-1" />
                     <span>Send automatic email reminders
-                      <span className="block font-normal text-emerald-800 mt-1">Get an email 3 days before the vaccination date and again on the due date.</span>
+                      <span className="block font-normal text-emerald-800 mt-1">Get an email 3 days before the {form.type === 'Deworming' ? 'deworming' : 'vaccination'} date and again on the due date.</span>
                     </span>
                   </label>
                   <div className="mt-3">
@@ -1126,6 +1127,7 @@ function About() {
         <InfoCard title="💉 Health & vaccination" text="Maintain vaccination, deworming, treatment and veterinary records, including the next due date so important health activities are not forgotten." />
         <InfoCard title="⚖️ Growth & weights" text="Record animal weights over time to monitor growth, performance and changes in body condition." />
         <InfoCard title="💰 Farm finances" text="Track farm income and expenses. When you register a purchased animal, its purchase price is automatically recorded as an animal-purchase expense." />
+        <InfoCard title="🔔 Critical reminders" text="The system helps send critical reminders by email, such as the next vaccination or deworming date, so important health work is never forgotten. You get a reminder 3 days before and again on the due date." />
         <InfoCard title="🛒 Marketplace" text="Post animals, produce and equipment for sale with photos. Listings go live after you pay a small listing fee and an admin approves them, which keeps fake adverts out." />
         <InfoCard title="🥛 Milk & egg production" text="Record daily milk by animal and eggs by poultry batch, and see monthly totals at a glance." />
         <InfoCard title="🌾 Feed tracking" text="Log feed type, quantity and cost. When you enter a cost, it is automatically added to your expenses as a feed expense." />
@@ -1149,6 +1151,10 @@ function InfoCard(p: { title: string; text: string }) {
   return <div className="bg-white border rounded-2xl p-6"><h3 className="font-black text-lg">{p.title}</h3><p className="text-slate-600 mt-2 leading-6">{p.text}</p></div>;
 }
 function Dashboard(p: any) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
   const now = new Date();
   const hour = now.getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -1184,50 +1190,71 @@ function Dashboard(p: any) {
     [Store, 'Marketplace', 'Advertise animals and produce for sale.', 'Marketplace'],
   ];
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <div className="text-slate-500">{greet}</div>
-        <h2 className="text-3xl sm:text-4xl font-black mt-1">{p.name || 'there'}</h2>
-        <p className="text-slate-500 mt-1">Your farm at a glance.</p>
+        <div className="text-slate-500 text-sm">{greet}</div>
+        {editing ? (
+          <form
+            onSubmit={async e => {
+              e.preventDefault();
+              const n = draft.trim();
+              if (!n) return;
+              setBusy(true); setErr('');
+              try { await p.onRename(n); setEditing(false); } catch { setErr('Could not save the name. Try again.'); } finally { setBusy(false); }
+            }}
+            className="flex flex-wrap gap-2 mt-1"
+          >
+            <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} maxLength={60} placeholder="e.g. Jeffrey's Farm" className="border rounded-xl px-3 py-2 text-lg font-bold bg-white" />
+            <button disabled={busy} className="bg-emerald-600 text-white rounded-xl px-4 py-2 font-bold disabled:opacity-60">{busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" onClick={() => { setEditing(false); setErr(''); }} className="border rounded-xl px-4 py-2 font-semibold bg-white">Cancel</button>
+          </form>
+        ) : (
+          <h2 className="text-2xl sm:text-3xl font-black mt-0.5 flex items-center gap-2">
+            {p.name || 'My farm'}
+            <button onClick={() => { setDraft(p.name || ''); setEditing(true); }} aria-label="Edit farm name" title="Edit farm name" className="text-slate-400 hover:text-slate-700"><Edit3 size={18} /></button>
+          </h2>
+        )}
+        {err && <p className="text-sm text-rose-600 mt-1">{err}</p>}
+        <p className="text-slate-500 text-sm mt-1">Your farm at a glance.</p>
       </div>
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-3">
         {stats.map(([Icon, bg, value, label, sub, page]) => (
-          <button key={label} onClick={() => p.setPage(page)} className="text-left bg-white border rounded-2xl p-5 sm:p-6 hover:shadow-md transition-shadow">
-            <span className={'w-14 h-14 rounded-2xl grid place-items-center text-white ' + bg}><Icon size={26} /></span>
-            <div className="text-3xl sm:text-4xl font-black mt-5 leading-none">{value}</div>
-            <div className="text-xs uppercase tracking-widest text-slate-500 mt-2">{label}</div>
-            <div className="border-t mt-4 pt-3 text-slate-600">{sub}</div>
+          <button key={label} onClick={() => p.setPage(page)} className="text-left bg-white border rounded-2xl p-4 hover:shadow-md transition-shadow">
+            <span className={'w-10 h-10 rounded-xl grid place-items-center text-white ' + bg}><Icon size={20} /></span>
+            <div className="text-2xl font-black mt-3 leading-none">{value}</div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 mt-1.5">{label}</div>
+            <div className="border-t mt-3 pt-2 text-xs text-slate-600">{sub}</div>
           </button>
         ))}
       </div>
-      <div className="grid xl:grid-cols-[1.5fr_1fr] gap-4">
-        <div className="bg-white border rounded-2xl p-5 sm:p-6">
-          <h3 className="text-xl font-black">Operational snapshot</h3>
+      <div className="grid xl:grid-cols-[1.5fr_1fr] gap-3">
+        <div className="bg-white border rounded-2xl p-4">
+          <h3 className="text-lg font-black">Operational snapshot</h3>
           <p className="text-slate-500 mb-4">Health and breeding signals across your farm</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             {snap.map(([Icon, value, label, sub]) => (
-              <div key={label} className="border rounded-2xl p-4">
+              <div key={label} className="border rounded-xl p-3">
                 <div className="flex items-center justify-between">
-                  <span className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center"><Icon size={18} /></span>
-                  <span className="text-2xl font-black">{value}</span>
+                  <span className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center"><Icon size={16} /></span>
+                  <span className="text-xl font-black">{value}</span>
                 </div>
-                <div className="font-bold mt-3">{label}</div>
+                <div className="font-bold text-sm mt-2">{label}</div>
                 <div className="text-xs text-slate-500 mt-1">{sub}</div>
               </div>
             ))}
           </div>
-          <div className={'mt-4 rounded-2xl px-4 py-3 ' + (overdue ? 'bg-rose-50 text-rose-700' : 'bg-stone-100 text-slate-700')}>
+          <div className={'mt-3 rounded-xl px-3 py-2 text-sm ' + (overdue ? 'bg-rose-50 text-rose-700' : 'bg-stone-100 text-slate-700')}>
             {overdue ? overdue + ' health ' + (overdue === 1 ? 'action is' : 'actions are') + ' overdue. Open Health to review.' : 'No urgent livestock alerts right now.'}
           </div>
         </div>
-        <div className="bg-white border rounded-2xl p-5 sm:p-6">
-          <h3 className="text-xl font-black">Quick actions</h3>
+        <div className="bg-white border rounded-2xl p-4">
+          <h3 className="text-lg font-black">Quick actions</h3>
           <p className="text-slate-500 mb-4">Jump to the sections you use most</p>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {actions.map(([Icon, title, text, page]) => (
-              <button key={title} onClick={() => p.setPage(page)} className="w-full text-left border rounded-2xl p-4 flex gap-4 items-start hover:bg-stone-50">
-                <span className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0"><Icon size={20} /></span>
-                <span><b>{title} <span className="text-slate-400">&#8599;</span></b><span className="block text-sm text-slate-500 mt-1">{text}</span></span>
+              <button key={title} onClick={() => p.setPage(page)} className="w-full text-left border rounded-xl p-3 flex gap-3 items-start hover:bg-stone-50">
+                <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0"><Icon size={18} /></span>
+                <span><b>{title} <span className="text-slate-400">&#8599;</span></b><span className="block text-xs text-slate-500 mt-0.5">{text}</span></span>
               </button>
             ))}
           </div>
