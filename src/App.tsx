@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api, auth } from './lib/backend';
 import Marketplace from './Marketplace';
+import Community from './Community';
 import {
   Home,
   PawPrint,
@@ -24,6 +25,7 @@ import {
   Wheat,
   FileBarChart,
   MoreVertical,
+  MessagesSquare,
   Bird,
   Egg,
   ShoppingBag,
@@ -296,6 +298,7 @@ export default function App() {
     ['Production', Milk],
     ['Feed', Wheat],
     ['Marketplace', Store],
+    ['Community', MessagesSquare],
     ['Reports', FileBarChart],
     ['About', Info],
     ...(authUser?.role === 'admin' ? [['Admin', Users] as any] : []),
@@ -515,6 +518,7 @@ export default function App() {
             <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed }} />
           )}
           {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
+          {page === 'Community' && <Community isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'About' && <About />}
           {page === 'Admin' && authUser.role === 'admin' && (
             <div className="space-y-6">
@@ -1128,6 +1132,7 @@ function About() {
         <InfoCard title="⚖️ Growth & weights" text="Record animal weights over time to monitor growth, performance and changes in body condition." />
         <InfoCard title="💰 Farm finances" text="Track farm income and expenses. When you register a purchased animal, its purchase price is automatically recorded as an animal-purchase expense." />
         <InfoCard title="🔔 Critical reminders" text="The system helps send critical reminders by email, such as the next vaccination or deworming date, so important health work is never forgotten. You get a reminder 3 days before and again on the due date." />
+        <InfoCard title="💬 Community & experts" text="Ask questions and get live answers from other farmers and admins. Vets and advisors can register their location and contacts so farmers near them can reach out quickly." />
         <InfoCard title="🛒 Marketplace" text="Post animals, produce and equipment for sale with photos. Listings go live after you pay a small listing fee and an admin approves them, which keeps fake adverts out." />
         <InfoCard title="🥛 Milk & egg production" text="Record daily milk by animal and eggs by poultry batch, and see monthly totals at a glance." />
         <InfoCard title="🌾 Feed tracking" text="Log feed type, quantity and cost. When you enter a cost, it is automatically added to your expenses as a feed expense." />

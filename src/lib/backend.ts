@@ -211,3 +211,68 @@ export const market = {
   async adminList() { return ((await adminCall('GET')).items || []).map(mapListing); },
   async adminAct(id: string, action: 'approve' | 'reject', reason?: string) { await adminCall('POST', { id, action, reason }); },
 };
+
+// ---------- Community ----------
+const whoIs = (u: any) => String(u?.user_metadata?.name || String(u?.email || '').split('@')[0] || 'Farmer');
+export const community = {
+  async questions(): Promise<any[]> {
+    const { data, error } = await supabase.from('questions').select('*').order('created_at', { ascending: false }).limit(200);
+    if (error) throw error;
+    return data || [];
+  },
+  async answers(): Promise<any[]> {
+    const { data, error } = await supabase.from('answers').select('*').order('created_at', { ascending: true }).limit(2000);
+    if (error) throw error;
+    return data || [];
+  },
+  async ask(f: { title: string; body: string; category: string; location: string }) {
+    const u = await sessionUser();
+    if (!u) throw new Error('Please sign in again.');
+    if (f.title.trim().length < 5) throw new Error('Write your question in at least a few words.');
+    const { error } = await supabase.from('questions').insert({ author_name: whoIs(u), title: f.title.trim(), body: f.body.trim(), category: f.category, location: f.location.trim() });
+    if (error) throw error;
+  },
+  async answer(questionId: string, body: string) {
+    const u = await sessionUser();
+    if (!u) throw new Error('Please sign in again.');
+    if (!body.trim()) throw new Error('Write an answer first.');
+    const { error } = await supabase.from('answers').insert({ question_id: questionId, author_name: whoIs(u), body: body.trim() });
+    if (error) throw error;
+  },
+  async remove(table: 'questions' | 'answers', id: string) {
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) throw error;
+  },
+  async experts(): Promise<any[]> {
+    const { data, error } = await supabase.from('experts').select('*').order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return data || [];
+  },
+  async saveExpert(f: any, id?: string) {
+    if (!f.name?.trim() || !f.location?.trim()) throw new Error('Name and location are required.');
+    if (!/^\+?[0-9 ]{9,15}$/.test(String(f.phone || '').trim())) throw new Error('Enter a valid phone number farmers can call.');
+    const row = {
+      name: f.name.trim(), profession: f.profession, location: f.location.trim(), phone: String(f.phone).trim(),
+      email: String(f.email || '').trim(), bio: String(f.bio || '').trim(),
+      latitude: f.latitude ?? null, longitude: f.longitude ?? null, status: 'pending',
+    };
+    const { error } = await (id ? supabase.from('experts').update(row).eq('id', id) : supabase.from('experts').insert(row));
+    if (error) throw error;
+  },
+  async setExpertStatus(id: string, status: 'approved' | 'rejected') {
+    const { error } = await supabase.from('experts').update({ status }).eq('id', id);
+    if (error) throw error;
+  },
+  async removeExpert(id: string) {
+    const { error } = await supabase.from('experts').delete().eq('id', id);
+    if (error) throw error;
+  },
+  subscribe(cb: () => void): () => void {
+    const ch = supabase.channel('community-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, cb)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'answers' }, cb)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'experts' }, cb)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  },
+};
