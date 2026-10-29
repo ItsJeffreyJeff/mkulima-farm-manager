@@ -289,8 +289,6 @@ export default function App() {
   const nav = [
     ['Dashboard', Home],
     ['Livestock', PawPrint],
-    ['Farm Born', PawPrint],
-    ['Purchased', CircleDollarSign],
     ['Poultry', Activity],
     ['Health', ShieldCheck],
     ['Events', Activity],
@@ -565,7 +563,7 @@ export default function App() {
               }}
               remove={remove}
               health={health}
-              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
+              add={(o?: string) => { setAnimal(o ? { ...blankAnimal, origin: o } : blankAnimal); setModal('animal'); }}
               bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
               editWeight={(w: any) => { setForm(w); setModal('weight'); }}
@@ -577,40 +575,6 @@ export default function App() {
                 });
                 setModal('weight');
               }}
-            />
-          )}
-          {page === 'Farm Born' && (
-            <Animals
-              title="Animals born at the farm"
-              animals={filtered.filter(a => !['Chicken', 'Other Poultry'].includes(a.species) && (a.origin === 'Farm Born' || (!a.origin && a.source !== 'Purchased')))}
-              search={search}
-              setSearch={setSearch}
-              edit={a => { setAnimal(a); setModal('animal'); }}
-              remove={remove}
-              health={health}
-              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
-              bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
-              weights={weights}
-              editWeight={(w: any) => { setForm(w); setModal('weight'); }}
-              deleteWeight={(id: string) => del('/api/weights/', id)}
-              weight={id => { setForm({ animalId: id, date: new Date().toISOString().slice(0, 10) }); setModal('weight'); }}
-            />
-          )}
-          {page === 'Purchased' && (
-            <Animals
-              title="Purchased animals"
-              animals={filtered.filter(a => !['Chicken', 'Other Poultry'].includes(a.species) && a.origin === 'Purchased')}
-              search={search}
-              setSearch={setSearch}
-              edit={a => { setAnimal(a); setModal('animal'); }}
-              remove={remove}
-              health={health}
-              add={() => { setAnimal(blankAnimal); setModal('animal'); }}
-              bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
-              weights={weights}
-              editWeight={(w: any) => { setForm(w); setModal('weight'); }}
-              deleteWeight={(id: string) => del('/api/weights/', id)}
-              weight={id => { setForm({ animalId: id, date: new Date().toISOString().slice(0, 10) }); setModal('weight'); }}
             />
           )}
           {page === 'Poultry' && (
@@ -1287,6 +1251,7 @@ function Animals(p: any) {
   const [tab, setTab] = useState<'Active' | 'Sold' | 'Other'>('Active');
   const [typeF, setTypeF] = useState('All');
   const [speciesF, setSpeciesF] = useState('All');
+  const [originF, setOriginF] = useState('All');
   const [open, setOpen] = useState('');
   const [menu, setMenu] = useState('');
   const today = new Date().toISOString().slice(0, 10);
@@ -1301,7 +1266,10 @@ function Animals(p: any) {
     bySpecies[s][t] = (bySpecies[s][t] || 0) + 1;
   });
   const types = Array.from(new Set(all.map(animalType))).sort();
-  const rows = all.filter(x => inTab(x, tab) && (speciesF === 'All' || (x.species || 'Other') === speciesF) && (typeF === 'All' || animalType(x) === typeF));
+  const originOf = (x: Animal) => (x.origin === 'Purchased' || (!x.origin && x.source === 'Purchased') ? 'Purchased' : 'Farm Born');
+  const base = all.filter(x => inTab(x, tab) && (speciesF === 'All' || (x.species || 'Other') === speciesF) && (typeF === 'All' || animalType(x) === typeF));
+  const originCount = (o: string) => base.filter(x => o === 'All' || originOf(x) === o).length;
+  const rows = base.filter(x => originF === 'All' || originOf(x) === originF);
   const wOf = (id: string) => (p.weights || []).filter((w: any) => w.animalId === id).sort((x: any, y: any) => String(y.date).localeCompare(String(x.date)));
   const nextVacc = (x: Animal) => {
     const ds = (p.health || [])
@@ -1328,7 +1296,7 @@ function Animals(p: any) {
         </div>
         <div className="flex gap-2">
           {p.bulkHealth && <button onClick={p.bulkHealth} className="flex gap-2 items-center bg-white border rounded-xl px-4 py-2.5 font-semibold"><ShieldCheck size={17} />Bulk health</button>}
-          {p.add && <button onClick={p.add} className="flex gap-2 items-center bg-slate-950 text-white rounded-xl px-4 py-2.5 font-bold"><Plus size={17} />Add animal</button>}
+          {p.add && <button onClick={() => p.add(originF !== 'All' ? originF : undefined)} className="flex gap-2 items-center bg-slate-950 text-white rounded-xl px-4 py-2.5 font-bold"><Plus size={17} />Add animal</button>}
         </div>
       </div>
       {Object.keys(bySpecies).length > 0 && (
@@ -1360,6 +1328,12 @@ function Animals(p: any) {
           <button key={k} onClick={() => setTab(k)} className={'px-4 py-2 rounded-full border font-semibold ' + (tab === k ? 'bg-slate-950 text-white border-slate-950' : 'bg-white')}>{l} ({count(k)})</button>
         ))}
       </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-sm text-slate-500 mr-1">Origin</span>
+        {([['All', 'All'], ['Farm Born', 'Born on the farm'], ['Purchased', 'Purchased']] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setOriginF(k)} className={'px-3 py-1.5 rounded-xl border text-sm font-semibold ' + (originF === k ? 'bg-emerald-500 border-emerald-500' : 'bg-white')}>{l} ({originCount(k)})</button>
+        ))}
+      </div>
       <div className="grid md:grid-cols-[1fr_auto] gap-3 mb-4">
         <input value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="Search by tag, name, breed…" className="border rounded-xl px-4 py-3 bg-white" />
         <select value={typeF} onChange={e => setTypeF(e.target.value)} className="border rounded-xl px-4 py-3 bg-white"><option value="All">All types</option>{types.map(t => <option key={t}>{t}</option>)}</select>
@@ -1379,7 +1353,7 @@ function Animals(p: any) {
                 return (
                   <Fragment key={a.id}>
                     <tr className="border-t cursor-pointer hover:bg-stone-50" onClick={() => setOpen(open === a.id ? '' : a.id)}>
-                      <td className="p-4 whitespace-nowrap"><span className="font-mono font-bold bg-stone-100 rounded-lg px-2.5 py-1.5">{a.tag}</span>{a.name && <span className="block text-xs text-slate-500 mt-1">{a.name}</span>}</td>
+                      <td className="p-4 whitespace-nowrap"><span className="font-mono font-bold bg-stone-100 rounded-lg px-2.5 py-1.5">{a.tag}</span>{a.name && <span className="block text-xs text-slate-500 mt-1">{a.name}</span>}{originOf(a) === 'Purchased' && <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Purchased</span>}</td>
                       <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + (TYPE_STYLE[t] || 'bg-stone-100 text-stone-700')}>{iconOf(a.species)} {t}</span></td>
                       <td className="p-4">{a.breed || '—'}</td>
                       <td className="p-4 whitespace-nowrap">{a.dob ? dateText(a.dob) : '--'}</td>
