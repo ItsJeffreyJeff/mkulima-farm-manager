@@ -15,7 +15,7 @@ const ADMINS = String(import.meta.env.VITE_ADMIN_EMAILS || '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const SECTION: Record<string, string> = {
   animals: 'Livestock', poultry: 'Poultry', weights: 'Weights', health: 'Health',
-  events: 'Events', finance: 'Finances', production: 'Production', feed: 'Feed',
+  events: 'Events', finance: 'Finances', production: 'Production', feed: 'Feed', birdpurchases: 'Poultry purchases',
 };
 
 function check(kind: string, x: any) {
@@ -30,6 +30,7 @@ function check(kind: string, x: any) {
   if (kind === 'events' && (!x.animalId || !x.date || !x.type)) bad('Animal, date and event type are required.');
   if (kind === 'finance' && (!x.date || !x.type || !x.category || !x.description || !x.amount)) bad('Required financial fields are missing.');
   if (kind === 'production' && (!x.date || !x.type || !(Number(x.quantity) > 0))) bad('Date, type and a quantity above zero are required.');
+  if (kind === 'birdpurchases' && (!x.date || !(Number(x.birds) > 0) || !(Number(x.amount) > 0))) bad('Date, number of birds and the amount paid are required.');
   if (kind === 'feed' && (!x.date || !x.feedType || !(Number(x.quantity) > 0))) bad('Date, feed type and a quantity above zero are required.');
 }
 const strip = (x: any) => { const { id, userId, ...rest } = x || {}; void id; void userId; return rest; };

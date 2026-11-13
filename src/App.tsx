@@ -108,6 +108,7 @@ export default function App() {
     [poultry, setPoultry] = useState<PoultryBatch[]>([]),
     [production, setProduction] = useState<RecordItem[]>([]),
     [feed, setFeed] = useState<RecordItem[]>([]),
+    [birdBuys, setBirdBuys] = useState<RecordItem[]>([]),
     [modal, setModal] = useState(''),
     [animal, setAnimal] = useState<Animal>(blankAnimal),
     [form, setForm] = useState<any>({}),
@@ -116,7 +117,7 @@ export default function App() {
     [search, setSearch] = useState('');
   async function load() {
     try {
-      const [a, p, w, h, e, f, pr, fd] = await Promise.all([
+      const [a, p, w, h, e, f, pr, fd, bp] = await Promise.all([
         api.get('/api/animals'),
         api.get('/api/poultry'),
         api.get('/api/weights'),
@@ -125,6 +126,7 @@ export default function App() {
         api.get('/api/finance'),
         api.get('/api/production'),
         api.get('/api/feed'),
+        api.get('/api/birdpurchases'),
       ]);
       setAnimals(a.data.items || []);
       setPoultry(p.data.items || []);
@@ -134,6 +136,7 @@ export default function App() {
       setFinance(f.data.items || []);
       setProduction(pr.data.items || []);
       setFeed(fd.data.items || []);
+      setBirdBuys(bp.data.items || []);
     } catch (e) {
       setError('Could not load farm records.');
     }
@@ -207,7 +210,7 @@ export default function App() {
     } finally { setAuthBusy(false); setAuthChecked(true); }
   }
   async function signOut() {
-    await auth.signOut(); setAuthUser(null); setAnimals([]); setPoultry([]); setWeights([]); setHealth([]); setEvents([]); setFinance([]); setProduction([]); setFeed([]); setPage('Dashboard');
+    await auth.signOut(); setAuthUser(null); setAnimals([]); setPoultry([]); setWeights([]); setHealth([]); setEvents([]); setFinance([]); setProduction([]); setFeed([]); setBirdBuys([]); setPage('Dashboard');
   }
   async function saveAnimal(e: any) {
     e.preventDefault();
@@ -252,6 +255,8 @@ export default function App() {
       if (form.id) await api.put(path + '/' + form.id, form);
       else {
         await api.post(path, form);
+        if (path === '/api/birdpurchases' && Number(form.amount) > 0)
+          await api.post('/api/finance', { date: form.date, type: 'expense', category: 'Poultry', description: 'Bird purchase: ' + form.birds + ' birds' + (form.supplier ? ' from ' + form.supplier : ''), amount: Number(form.amount) });
         if (path === '/api/feed' && Number(form.cost) > 0)
           await api.post('/api/finance', { date: form.date, type: 'expense', category: 'Feed', description: 'Feed: ' + form.feedType + ' (' + form.quantity + ' kg)', amount: Number(form.cost) });
       }
@@ -272,6 +277,8 @@ export default function App() {
     await load();
   }
   const month = new Date().toISOString().slice(0, 7);
+  const birdSpent = birdBuys.reduce((s, x) => s + Number(x.amount || 0), 0);
+  const birdCount = birdBuys.reduce((s, x) => s + Number(x.birds || 0), 0);
   const active = animals.filter(a => a.status === 'Active').length,
     dead = animals.filter(a => a.status === 'Dead').length;
   const income = finance
@@ -513,7 +520,7 @@ export default function App() {
             </>
           )}
           {page === 'Reports' && (
-            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed }} />
+            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed, 'Bird purchases': birdBuys }} />
           )}
           {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'Community' && <Community isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
@@ -578,6 +585,7 @@ export default function App() {
             />
           )}
           {page === 'Poultry' && (
+            <div className="space-y-6">
             <PoultryRegister
               batches={poultry.filter(x => (x.batch + ' ' + x.birdType + ' ' + x.breed).toLowerCase().includes(search.toLowerCase()))}
               search={search}
@@ -586,6 +594,31 @@ export default function App() {
               edit={x => { setForm({ ...x }); setModal('poultry'); }}
               remove={async id => { if (!confirm('Delete this poultry batch?')) return; await api.delete('/api/poultry/' + id); await load(); }}
             />
+              <div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                  <Card label="Spent on birds" value={money(birdSpent)} />
+                  <Card label="Birds bought" value={String(birdCount)} />
+                  <Card label="Average per bird" value={birdCount ? money(Math.round(birdSpent / birdCount)) : '—'} />
+                </div>
+                <Table
+                  title="Bird purchases"
+                  button="Record purchase"
+                  click={() => { setForm({ date: new Date().toISOString().slice(0, 10), batch: '' }); setModal('birdbuy'); }}
+                  onEdit={(i: number) => { setForm(birdBuys[i]); setModal('birdbuy'); }}
+                  onDelete={(i: number) => del('/api/birdpurchases/', birdBuys[i].id)}
+                  heads={['Date', 'Birds', 'Amount paid', 'Per bird', 'Supplier', 'Batch', 'Notes']}
+                  rows={birdBuys.map(x => [
+                    dateText(x.date),
+                    String(x.birds),
+                    money(Number(x.amount)),
+                    Number(x.birds) ? money(Math.round(Number(x.amount) / Number(x.birds))) : '—',
+                    x.supplier || '—',
+                    x.batch || '—',
+                    x.notes || '—',
+                  ])}
+                />
+              </div>
+            </div>
           )}
           {false && (
             <Animals
@@ -719,6 +752,8 @@ export default function App() {
               ? animal.id
                 ? 'Edit animal'
                 : 'Register animal'
+              : modal === 'birdbuy'
+                ? (form.id ? 'Edit bird purchase' : 'Record bird purchase')
               : modal === 'poultry'
                 ? form.id ? 'Edit poultry batch' : 'Add poultry batch'
               : modal === 'production'
@@ -835,6 +870,19 @@ export default function App() {
                 v={animal.notes}
                 c={v => setAnimal({ ...animal, notes: v })}
               />
+              <Submit />
+            </form>
+          )}
+          {modal === 'birdbuy' && (
+            <form onSubmit={e => save('/api/birdpurchases', e)} className="grid md:grid-cols-2 gap-4">
+              <Field l="Date" type="date" v={form.date} c={v => setForm({ ...form, date: v })} req />
+              <Field l="Number of birds bought" type="number" v={form.birds} c={v => setForm({ ...form, birds: v })} req />
+              <Field l="Total amount paid (KSh)" type="number" v={form.amount} c={v => setForm({ ...form, amount: v })} req />
+              <Field l="Supplier / hatchery" v={form.supplier} c={v => setForm({ ...form, supplier: v })} />
+              <Select l="Poultry batch (optional)" v={form.batch} opts={['', ...poultry.map(x => x.batch)]} c={v => setForm({ ...form, batch: v })} />
+              <Field l="Notes" v={form.notes} c={v => setForm({ ...form, notes: v })} />
+              {Number(form.birds) > 0 && Number(form.amount) > 0 && <p className="md:col-span-2 text-sm text-slate-600">That is about {money(Math.round(Number(form.amount) / Number(form.birds)))} per bird.</p>}
+              {!form.id && <p className="md:col-span-2 text-xs text-slate-500">This is also added to Finances as an expense. Editing a purchase later does not change that Finance entry.</p>}
               <Submit />
             </form>
           )}
