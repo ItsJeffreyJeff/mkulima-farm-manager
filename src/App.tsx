@@ -109,6 +109,7 @@ export default function App() {
     [production, setProduction] = useState<RecordItem[]>([]),
     [feed, setFeed] = useState<RecordItem[]>([]),
     [birdBuys, setBirdBuys] = useState<RecordItem[]>([]),
+    [poultryFeed, setPoultryFeed] = useState<RecordItem[]>([]),
     [modal, setModal] = useState(''),
     [animal, setAnimal] = useState<Animal>(blankAnimal),
     [form, setForm] = useState<any>({}),
@@ -117,7 +118,7 @@ export default function App() {
     [search, setSearch] = useState('');
   async function load() {
     try {
-      const [a, p, w, h, e, f, pr, fd, bp] = await Promise.all([
+      const [a, p, w, h, e, f, pr, fd, bp, pf] = await Promise.all([
         api.get('/api/animals'),
         api.get('/api/poultry'),
         api.get('/api/weights'),
@@ -127,6 +128,7 @@ export default function App() {
         api.get('/api/production'),
         api.get('/api/feed'),
         api.get('/api/birdpurchases'),
+        api.get('/api/poultryfeed'),
       ]);
       setAnimals(a.data.items || []);
       setPoultry(p.data.items || []);
@@ -137,6 +139,7 @@ export default function App() {
       setProduction(pr.data.items || []);
       setFeed(fd.data.items || []);
       setBirdBuys(bp.data.items || []);
+      setPoultryFeed(pf.data.items || []);
     } catch (e) {
       setError('Could not load farm records.');
     }
@@ -210,7 +213,7 @@ export default function App() {
     } finally { setAuthBusy(false); setAuthChecked(true); }
   }
   async function signOut() {
-    await auth.signOut(); setAuthUser(null); setAnimals([]); setPoultry([]); setWeights([]); setHealth([]); setEvents([]); setFinance([]); setProduction([]); setFeed([]); setBirdBuys([]); setPage('Dashboard');
+    await auth.signOut(); setAuthUser(null); setAnimals([]); setPoultry([]); setWeights([]); setHealth([]); setEvents([]); setFinance([]); setProduction([]); setFeed([]); setBirdBuys([]); setPoultryFeed([]); setPage('Dashboard');
   }
   async function saveAnimal(e: any) {
     e.preventDefault();
@@ -279,6 +282,16 @@ export default function App() {
   const month = new Date().toISOString().slice(0, 7);
   const birdSpent = birdBuys.reduce((s, x) => s + Number(x.amount || 0), 0);
   const birdCount = birdBuys.reduce((s, x) => s + Number(x.birds || 0), 0);
+  const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  const kgSum = (rows: RecordItem[]) => Math.round(rows.reduce((s, x) => s + Number(x.kg || 0), 0) * 10) / 10;
+  const pfMonth = kgSum(poultryFeed.filter(x => String(x.date).startsWith(month)));
+  const pfWeek = kgSum(poultryFeed.filter(x => String(x.date).slice(0, 10) >= weekAgo));
+  const pfTotal = kgSum(poultryFeed);
+  const gramsPerBird = (x: RecordItem) => {
+    const b = poultry.find(y => y.batch === x.batch);
+    const n = b ? Number(b.currentBirds || b.initialBirds || 0) : 0;
+    return n ? Math.round((Number(x.kg) * 1000) / n) + ' g' : '—';
+  };
   const active = animals.filter(a => a.status === 'Active').length,
     dead = animals.filter(a => a.status === 'Dead').length;
   const income = finance
@@ -520,7 +533,7 @@ export default function App() {
             </>
           )}
           {page === 'Reports' && (
-            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed, 'Bird purchases': birdBuys }} />
+            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed, 'Bird purchases': birdBuys, 'Poultry feed eaten': poultryFeed }} />
           )}
           {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'Community' && <Community isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
@@ -614,6 +627,29 @@ export default function App() {
                     Number(x.birds) ? money(Math.round(Number(x.amount) / Number(x.birds))) : '—',
                     x.supplier || '—',
                     x.batch || '—',
+                    x.notes || '—',
+                  ])}
+                />
+              </div>
+              <div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                  <Card label="Feed eaten this month" value={pfMonth + ' kg'} />
+                  <Card label="Last 7 days" value={pfWeek + ' kg'} />
+                  <Card label="Total recorded" value={pfTotal + ' kg'} />
+                </div>
+                <Table
+                  title="Feed consumed"
+                  button="Record feed eaten"
+                  click={() => { setForm({ date: new Date().toISOString().slice(0, 10), batch: '' }); setModal('pfeed'); }}
+                  onEdit={(i: number) => { setForm(poultryFeed[i]); setModal('pfeed'); }}
+                  onDelete={(i: number) => del('/api/poultryfeed/', poultryFeed[i].id)}
+                  heads={['Date', 'Batch', 'Feed type', 'Amount eaten', 'Per bird', 'Notes']}
+                  rows={poultryFeed.map(x => [
+                    dateText(x.date),
+                    x.batch || 'All birds',
+                    x.feedType || '—',
+                    x.kg + ' kg',
+                    x.batch ? gramsPerBird(x) : '—',
                     x.notes || '—',
                   ])}
                 />
@@ -752,6 +788,8 @@ export default function App() {
               ? animal.id
                 ? 'Edit animal'
                 : 'Register animal'
+              : modal === 'pfeed'
+                ? (form.id ? 'Edit feed record' : 'Record feed eaten')
               : modal === 'birdbuy'
                 ? (form.id ? 'Edit bird purchase' : 'Record bird purchase')
               : modal === 'poultry'
@@ -870,6 +908,17 @@ export default function App() {
                 v={animal.notes}
                 c={v => setAnimal({ ...animal, notes: v })}
               />
+              <Submit />
+            </form>
+          )}
+          {modal === 'pfeed' && (
+            <form onSubmit={e => save('/api/poultryfeed', e)} className="grid md:grid-cols-2 gap-4">
+              <Field l="Date" type="date" v={form.date} c={v => setForm({ ...form, date: v })} req />
+              <Select l="Poultry batch (blank = all birds)" v={form.batch} opts={['', ...poultry.map(x => x.batch)]} c={v => setForm({ ...form, batch: v })} />
+              <Field l="Feed type (e.g. layers mash)" v={form.feedType} c={v => setForm({ ...form, feedType: v })} />
+              <Field l="Amount eaten (kg)" type="number" v={form.kg} c={v => setForm({ ...form, kg: v })} req />
+              <Field l="Notes" v={form.notes} c={v => setForm({ ...form, notes: v })} />
+              {form.batch && Number(form.kg) > 0 && <p className="md:col-span-2 text-sm text-slate-600">That is about {gramsPerBird({ batch: form.batch, kg: form.kg } as any)} per bird.</p>}
               <Submit />
             </form>
           )}
@@ -1548,6 +1597,7 @@ function Field(p: any) {
       <input
         required={p.req}
         type={p.type || 'text'}
+        step={p.type === 'number' ? 'any' : undefined}
         value={p.v || ''}
         onChange={e => p.c(e.target.value)}
         className="mt-1 w-full border rounded-xl px-3 py-2 font-normal"
