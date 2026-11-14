@@ -280,6 +280,8 @@ export default function App() {
     await load();
   }
   const month = new Date().toISOString().slice(0, 7);
+  // Finances are shown oldest first; entries on the same date keep the order they were added
+  const financeSorted = [...finance].sort((x, y) => String(x.date).slice(0, 10).localeCompare(String(y.date).slice(0, 10)));
   const birdSpent = birdBuys.reduce((s, x) => s + Number(x.amount || 0), 0);
   const birdCount = birdBuys.reduce((s, x) => s + Number(x.birds || 0), 0);
   const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
@@ -533,7 +535,7 @@ export default function App() {
             </>
           )}
           {page === 'Reports' && (
-            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: finance, Production: production, Feed: feed, 'Bird purchases': birdBuys, 'Poultry feed eaten': poultryFeed }} />
+            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: financeSorted, Production: production, Feed: feed, 'Bird purchases': birdBuys, 'Poultry feed eaten': poultryFeed }} />
           )}
           {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'Community' && <Community isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
@@ -764,10 +766,10 @@ export default function App() {
                   });
                   setModal('finance');
                 }}
-                onEdit={(i: number) => { setForm(finance[i]); setModal('finance'); }}
-                onDelete={(i: number) => del('/api/finance/', finance[i].id)}
+                onEdit={(i: number) => { setForm(financeSorted[i]); setModal('finance'); }}
+                onDelete={(i: number) => del('/api/finance/', financeSorted[i].id)}
                 heads={['Date', 'Type', 'Category', 'Description', 'Amount']}
-                rows={finance.map(x => [
+                rows={financeSorted.map(x => [
                   dateText(x.date),
                   x.type,
                   x.category,
