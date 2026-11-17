@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { api, auth } from './lib/backend';
 import Marketplace from './Marketplace';
 import Community from './Community';
@@ -1176,6 +1177,7 @@ export default function App() {
           )}
         </Modal>
       )}
+      <Analytics />
     </div>
   );
 }
