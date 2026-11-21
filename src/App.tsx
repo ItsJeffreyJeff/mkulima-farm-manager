@@ -2,6 +2,11 @@ import { Fragment, useEffect, useState } from 'react';
 import { api, auth } from './lib/backend';
 import Marketplace from './Marketplace';
 import Community from './Community';
+import { MiniChart, GroupedBars } from './charts';
+import ReportsHub from './Reports';
+import GlobalSearch from './GlobalSearch';
+import { buildNotices, dueItems, expectedBirths, lastMonths, monthlyFinance, monthLabel, categoryTotals } from './analytics';
+import { GESTATION, CYCLE, MALE_TYPES, FEMALE_TYPES, addDays, inbreedingWarning, adg } from './breeding';
 import {
   Home,
   PawPrint,
@@ -25,6 +30,9 @@ import {
   Wheat,
   FileBarChart,
   MoreVertical,
+  Bell,
+  MoreHorizontal,
+  ChevronDown,
   MessagesSquare,
   Bird,
   Egg,
@@ -46,6 +54,12 @@ type Animal = {
   expectedDueDate?: string;
   origin?: string;
   purchasePrice?: string;
+  sireId?: string;
+  damId?: string;
+  matingSireId?: string;
+  lastKiddingDate?: string;
+  reproStatus?: string;
+  forSale?: boolean;
 };
 type RecordItem = { id: string; [key: string]: any };
 type PoultryBatch = { id: string; batch: string; birdType: string; breed: string; hatchDate: string; initialBirds: string; currentBirds: string; purpose: string; source: string; notes: string };
@@ -66,6 +80,12 @@ const blankAnimal: Animal = {
   expectedDueDate: '',
   origin: 'Farm Born',
   purchasePrice: '',
+  sireId: '',
+  damId: '',
+  matingSireId: '',
+  lastKiddingDate: '',
+  reproStatus: '',
+  forSale: false,
 };
 
 function money(n: number) {
@@ -110,6 +130,9 @@ export default function App() {
     [feed, setFeed] = useState<RecordItem[]>([]),
     [birdBuys, setBirdBuys] = useState<RecordItem[]>([]),
     [poultryFeed, setPoultryFeed] = useState<RecordItem[]>([]),
+    [showN, setShowN] = useState(false),
+    [openG, setOpenG] = useState<Record<string, boolean>>({}),
+    [finF, setFinF] = useState({ type: 'All', cat: 'All', ent: 'All', q: '', from: '', to: '' }),
     [modal, setModal] = useState(''),
     [animal, setAnimal] = useState<Animal>(blankAnimal),
     [form, setForm] = useState<any>({}),
@@ -239,6 +262,7 @@ export default function App() {
             date: new Date().toISOString().slice(0, 10),
             type: 'expense',
             category: 'Animals',
+            enterprise: ['Chicken', 'Other Poultry'].includes(animal.species) ? 'Poultry' : 'Livestock',
             description: 'Purchase of ' + (animal.name || animal.tag) + ' (' + animal.species + ')',
             amount: Number(animal.purchasePrice),
             animalTag: animal.tag,
@@ -252,6 +276,18 @@ export default function App() {
       setError('Could not save animal.');
     }
   }
+  function bulkHealth(type: string, ids: string[]) {
+    setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'GROUP', animalIds: ids, animalCount: ids.length, type, emailReminders: true });
+    setModal('health');
+  }
+  async function bulkUpdate(ids: string[], patch: Record<string, any>) {
+    try {
+      await Promise.all(ids.map(id => api.put('/api/animals/' + id, patch)));
+      await load();
+    } catch {
+      setError('Could not update the selected animals.');
+    }
+  }
   async function save(path: string, e: any) {
     e.preventDefault();
     try {
@@ -259,9 +295,9 @@ export default function App() {
       else {
         await api.post(path, form);
         if (path === '/api/birdpurchases' && Number(form.amount) > 0)
-          await api.post('/api/finance', { date: form.date, type: 'expense', category: 'Poultry', description: 'Bird purchase: ' + form.birds + ' birds' + (form.supplier ? ' from ' + form.supplier : ''), amount: Number(form.amount) });
+          await api.post('/api/finance', { date: form.date, type: 'expense', category: 'Poultry', enterprise: 'Poultry', description: 'Bird purchase: ' + form.birds + ' birds' + (form.supplier ? ' from ' + form.supplier : ''), amount: Number(form.amount) });
         if (path === '/api/feed' && Number(form.cost) > 0)
-          await api.post('/api/finance', { date: form.date, type: 'expense', category: 'Feed', description: 'Feed: ' + form.feedType + ' (' + form.quantity + ' kg)', amount: Number(form.cost) });
+          await api.post('/api/finance', { date: form.date, type: 'expense', category: 'Feed', enterprise: form.group === 'Poultry' ? 'Poultry' : form.group === 'Livestock' ? 'Livestock' : 'General', description: 'Feed: ' + form.feedType + ' (' + form.quantity + ' kg)', amount: Number(form.cost) });
       }
       setModal('');
       setForm({});
@@ -282,6 +318,21 @@ export default function App() {
   const month = new Date().toISOString().slice(0, 7);
   // Finances are shown oldest first; entries on the same date keep the order they were added
   const financeSorted = [...finance].sort((x, y) => String(x.date).slice(0, 10).localeCompare(String(y.date).slice(0, 10)));
+  const pool: Animal[] = animal.id ? animals.map(x => (x.id === animal.id ? animal : x)) : [...animals, { ...animal, id: '__new' }];
+  const parentWarn = inbreedingWarning(animal.sireId, animal.damId, pool);
+  const matingWarn = inbreedingWarning(animal.id || '__new', animal.matingSireId, pool);
+  const sireOptions = animals.filter(x => x.id !== animal.id && x.species === animal.species && MALE_TYPES.includes(x.sex));
+  const damOptions = animals.filter(x => x.id !== animal.id && x.species === animal.species && FEMALE_TYPES.includes(x.sex));
+  const notices = buildNotices({ animals, health, poultry, weights, finance });
+  const alertCount = notices.filter(n => n.level !== 'info').length;
+  const day10 = (x: any) => String(x.date || '').slice(0, 10);
+  const financeShown = financeSorted.filter(x =>
+    (finF.type === 'All' || x.type === finF.type) && (finF.cat === 'All' || x.category === finF.cat) &&
+    (finF.ent === 'All' || (x.enterprise || 'General') === finF.ent) && (!finF.from || day10(x) >= finF.from) && (!finF.to || day10(x) <= finF.to) &&
+    (!finF.q || (String(x.description || '') + ' ' + String(x.category || '')).toLowerCase().includes(finF.q.toLowerCase())));
+  const shownIncome = financeShown.filter(x => x.type === 'income').reduce((s, x) => s + Number(x.amount || 0), 0);
+  const shownExpense = financeShown.filter(x => x.type === 'expense').reduce((s, x) => s + Number(x.amount || 0), 0);
+  const finCats = Array.from(new Set(['Feed', 'Animals', 'Poultry', 'Veterinary', 'Vaccines', 'Equipment', 'Transport', 'Labour', 'Sales', 'Other', ...finance.map(x => String(x.category || ''))].filter(Boolean)));
   const birdSpent = birdBuys.reduce((s, x) => s + Number(x.amount || 0), 0);
   const birdCount = birdBuys.reduce((s, x) => s + Number(x.birds || 0), 0);
   const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
@@ -323,6 +374,14 @@ export default function App() {
     ['About', Info],
     ...(authUser?.role === 'admin' ? [['Admin', Users] as any] : []),
   ];
+  const GROUPS: [string, string[]][] = [
+    ['Farm', ['Dashboard', 'Livestock', 'Poultry', 'Health', 'Events']],
+    ['Production & feed', ['Production', 'Feed']],
+    ['Money & reports', ['Finances', 'Reports']],
+    ['Market & community', ['Marketplace', 'Community']],
+    ['More', ['About', 'Admin']],
+  ];
+  const icons: Record<string, any> = Object.fromEntries(nav.map(([n, I]: any) => [n, I]));
   const filtered = animals.filter(a =>
     (a.tag + ' ' + a.name + ' ' + a.breed + ' ' + a.species)
       .toLowerCase()
@@ -419,24 +478,26 @@ export default function App() {
             <X />
           </button>
         </div>
-        {nav.map(([n, I]) => (
-          <button
-            key={n}
-            onClick={() => {
-              setPage(n);
-              setMobile(false);
-            }}
-            className={
-              'w-full flex gap-3 items-center px-3 py-3 rounded-xl mb-1 ' +
-              (page === n
-                ? 'bg-emerald-400 text-slate-950 font-bold'
-                : 'text-slate-300 hover:bg-slate-800')
-            }
-          >
-            <I size={18} />
-            {n}
-          </button>
-        ))}
+        {GROUPS.map(([g, items]) => {
+          const list = items.filter(n => icons[n]);
+          if (!list.length) return null;
+          const isOpen = openG[g] !== false || list.includes(page);
+          return (
+            <div key={g} className="mb-2">
+              <button onClick={() => setOpenG({ ...openG, [g]: !isOpen })} className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wider text-slate-500">
+                <span>{g}</span><ChevronDown size={14} className={isOpen ? '' : '-rotate-90'} />
+              </button>
+              {isOpen && list.map(n => {
+                const I = icons[n];
+                return (
+                  <button key={n} onClick={() => { setPage(n); setMobile(false); }} className={'w-full flex gap-3 items-center px-3 py-2.5 rounded-xl mb-0.5 ' + (page === n ? 'bg-emerald-400 text-slate-950 font-bold' : 'text-slate-300 hover:bg-slate-800')}>
+                    <I size={18} />{n}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
       </aside>
       {mobile && <div className="fixed inset-0 z-30 bg-slate-950/50 md:hidden" onClick={() => setMobile(false)} />}
       <main className="md:ml-64">
@@ -450,6 +511,28 @@ export default function App() {
             <h1 className="font-black text-xl truncate">{page}</h1>
           </div>
           <div className="hidden lg:block text-right mr-2"><div className="text-xs text-slate-500">Signed in as</div><div className="text-sm font-semibold max-w-52 truncate">{authUser.name || authUser.email}</div></div>
+          <GlobalSearch data={{ animals, poultry, health, finance, production, feed, events }} onGo={p => setPage(p)} />
+          <div className="relative">
+            <button onClick={() => setShowN(!showN)} className="relative bg-white border p-2.5 rounded-xl" aria-label="Notifications" title="Notifications">
+              <Bell size={18} />
+              {alertCount > 0 && <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[11px] font-bold grid place-items-center">{alertCount}</span>}
+            </button>
+            {showN && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowN(false)} />
+                <div className="fixed right-2 top-16 sm:absolute sm:right-0 sm:top-12 z-50 w-[min(94vw,380px)] max-h-[70vh] overflow-auto bg-white border rounded-2xl shadow-xl">
+                  <div className="px-4 py-3 border-b font-bold">Notifications</div>
+                  {notices.length === 0 && <p className="p-4 text-sm text-slate-500">Nothing needs your attention right now.</p>}
+                  {notices.map(n => (
+                    <button key={n.id} onClick={() => { setPage(n.page); setShowN(false); }} className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-stone-50 flex gap-3">
+                      <span className={'mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ' + (n.level === 'danger' ? 'bg-rose-500' : n.level === 'warn' ? 'bg-amber-500' : 'bg-sky-500')} />
+                      <span><span className="block font-semibold text-sm">{n.title}</span><span className="block text-xs text-slate-500">{n.text}</span></span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button onClick={signOut} className="flex gap-2 bg-white border px-3 py-2.5 rounded-xl" title="Sign out"><LogOut size={17} /><span className="hidden sm:inline">Sign out</span></button>
           <button
             onClick={csv}
@@ -476,7 +559,7 @@ export default function App() {
             <span className="hidden sm:inline">Poultry batch</span>
           </button>}
         </header>
-        <div className="p-3 sm:p-4 md:p-8 max-w-7xl mx-auto">
+        <div className="p-3 pb-24 sm:p-4 sm:pb-24 md:p-8 max-w-7xl mx-auto">
           {error && (
             <div className="bg-red-50 text-red-700 border border-red-200 p-3 rounded-xl mb-5">
               {error}
@@ -535,7 +618,7 @@ export default function App() {
             </>
           )}
           {page === 'Reports' && (
-            <Reports data={{ Livestock: animals, Poultry: poultry, Weights: weights, Health: health, Events: events, Finances: financeSorted, Production: production, Feed: feed, 'Bird purchases': birdBuys, 'Poultry feed eaten': poultryFeed }} />
+            <ReportsHub data={{ animals, poultry, weights, health, events, finance: financeSorted, production, feed, birdBuys, poultryFeed }} />
           )}
           {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'Community' && <Community isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
@@ -568,6 +651,11 @@ export default function App() {
               production={production}
               finance={finance}
               health={health}
+              weights={weights}
+              feed={feed}
+              poultryFeed={poultryFeed}
+              birdBuys={birdBuys}
+              notices={notices}
               name={(() => { const n = String(authUser?.name || String(authUser?.email || '').split('@')[0] || ''); return n.charAt(0).toUpperCase() + n.slice(1); })()}
               onRename={async (n: string) => { await auth.updateName(n); setAuthUser({ ...authUser, name: n }); }}
               setPage={setPage}
@@ -585,6 +673,9 @@ export default function App() {
               }}
               remove={remove}
               health={health}
+              everyone={animals}
+              onBulkHealth={bulkHealth}
+              onBulkUpdate={bulkUpdate}
               add={(o?: string) => { setAnimal(o ? { ...blankAnimal, origin: o } : blankAnimal); setModal('animal'); }}
               bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
@@ -667,6 +758,9 @@ export default function App() {
               edit={a => { setAnimal(a); setModal('animal'); }}
               remove={remove}
               health={health}
+              everyone={animals}
+              onBulkHealth={bulkHealth}
+              onBulkUpdate={bulkUpdate}
               add={() => { setAnimal(blankAnimal); setModal('animal'); }}
               bulkHealth={() => { setForm({ date: new Date().toISOString().slice(0, 10), animalId: 'ALL', type: 'Vaccination', animalCount: animals.filter(x => x.status === 'Active').length }); setModal('health'); }}
               weights={weights}
@@ -717,7 +811,7 @@ export default function App() {
               ]}
               rows={health.map(x => [
                 dateText(x.date),
-                x.animalId === 'ALL' ? 'All animals' + (x.animalCount ? ' (' + x.animalCount + ')' : '') : animals.find(a => a.id === x.animalId)?.tag || '—',
+                x.animalId === 'GROUP' ? (x.animalCount || (x.animalIds || []).length) + ' selected: ' + (x.animalIds || []).slice(0, 4).map((id: string) => animals.find(y => y.id === id)?.tag || '?').join(', ') + ((x.animalIds || []).length > 4 ? '…' : '') : x.animalId === 'ALL' ? 'All animals' + (x.animalCount ? ' (' + x.animalCount + ')' : '') : animals.find(a => a.id === x.animalId)?.tag || '—',
                 x.type,
                 x.vaccine || '—',
                 dateText(x.nextDue),
@@ -750,39 +844,49 @@ export default function App() {
           )}
           {page === 'Finances' && (
             <>
-              <div className="grid md:grid-cols-3 gap-4 mb-5">
-                <Card label="Income" value={money(income)} />
-                <Card label="Expenses" value={money(expense)} />
-                <Card label="Net" value={money(income - expense)} />
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <Card label="Income" value={money(shownIncome)} />
+                <Card label="Expenses" value={money(shownExpense)} />
+                <Card label="Net" value={money(shownIncome - shownExpense)} />
+              </div>
+              <div className="bg-white border rounded-2xl p-3 sm:p-4 mb-4 grid sm:grid-cols-2 lg:grid-cols-6 gap-2 text-sm">
+                <input value={finF.q} onChange={e => setFinF({ ...finF, q: e.target.value })} placeholder="Search description or category" className="border rounded-xl px-3 py-2 lg:col-span-2" />
+                <select value={finF.type} onChange={e => setFinF({ ...finF, type: e.target.value })} className="border rounded-xl px-3 py-2 bg-white"><option value="All">Income and expenses</option><option value="income">Income only</option><option value="expense">Expenses only</option></select>
+                <select value={finF.cat} onChange={e => setFinF({ ...finF, cat: e.target.value })} className="border rounded-xl px-3 py-2 bg-white"><option value="All">All categories</option>{finCats.map(c => <option key={c}>{c}</option>)}</select>
+                <select value={finF.ent} onChange={e => setFinF({ ...finF, ent: e.target.value })} className="border rounded-xl px-3 py-2 bg-white"><option value="All">All enterprises</option>{['General', 'Livestock', 'Poultry', 'Dairy', 'Crops'].map(c => <option key={c}>{c}</option>)}</select>
+                <button onClick={() => setFinF({ type: 'All', cat: 'All', ent: 'All', q: '', from: '', to: '' })} className="border rounded-xl px-3 py-2 font-semibold">Clear filters</button>
+                <label className="flex items-center gap-2 lg:col-span-3">From<input type="date" value={finF.from} onChange={e => setFinF({ ...finF, from: e.target.value })} className="flex-1 border rounded-xl px-3 py-2" /></label>
+                <label className="flex items-center gap-2 lg:col-span-3">To<input type="date" value={finF.to} onChange={e => setFinF({ ...finF, to: e.target.value })} className="flex-1 border rounded-xl px-3 py-2" /></label>
               </div>
               <Table
                 title="Farm financial ledger"
                 button="Add transaction"
                 click={() => {
-                  setForm({
-                    date: new Date().toISOString().slice(0, 10),
-                    type: 'expense',
-                    category: 'Feed',
-                  });
+                  setForm({ date: new Date().toISOString().slice(0, 10), type: 'expense', category: 'Feed', enterprise: 'General' });
                   setModal('finance');
                 }}
-                onEdit={(i: number) => { setForm(financeSorted[i]); setModal('finance'); }}
-                onDelete={(i: number) => del('/api/finance/', financeSorted[i].id)}
-                heads={['Date', 'Type', 'Category', 'Description', 'Amount']}
-                rows={financeSorted.map(x => [
+                onEdit={(i: number) => { setForm(financeShown[i]); setModal('finance'); }}
+                onDelete={(i: number) => del('/api/finance/', financeShown[i].id)}
+                heads={['Date', 'Type', 'Category', 'Enterprise', 'Description', 'Amount']}
+                rows={financeShown.map(x => [
                   dateText(x.date),
                   x.type,
                   x.category,
+                  x.enterprise || 'General',
                   x.description,
-                  x.type === 'income'
-                    ? '+ ' + money(x.amount)
-                    : '- ' + money(x.amount),
+                  x.type === 'income' ? '+ ' + money(x.amount) : '- ' + money(x.amount),
                 ])}
               />
             </>
           )}
         </div>
       </main>
+      <nav className="bottom-nav md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t grid grid-cols-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {([['Dashboard', Home, 'Home'], ['Livestock', PawPrint, 'Livestock'], ['Health', ShieldCheck, 'Health'], ['Finances', CircleDollarSign, 'Money'], ['Marketplace', Store, 'Market']] as [string, any, string][]).map(([n, I, l]) => (
+          <button key={n} onClick={() => setPage(n)} className={'flex flex-col items-center gap-0.5 py-2 text-[11px] ' + (page === n ? 'text-emerald-700 font-bold' : 'text-slate-500')}><I size={20} />{l}</button>
+        ))}
+        <button onClick={() => setMobile(true)} className="flex flex-col items-center gap-0.5 py-2 text-[11px] text-slate-500"><MoreHorizontal size={20} />More</button>
+      </nav>
       {modal && (
         <Modal
           title={
@@ -879,15 +983,46 @@ export default function App() {
                 v={animal.source}
                 c={v => setAnimal({ ...animal, source: v })}
               />
+              <div className="md:col-span-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                <div className="font-bold text-emerald-900 mb-3">Parentage</div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <label className="text-sm font-semibold">
+                    Sire (father)
+                    <select value={animal.sireId || ''} onChange={e => setAnimal({ ...animal, sireId: e.target.value })} className="mt-1 w-full border rounded-xl px-3 py-2 bg-white font-normal">
+                      <option value="">Unknown / not recorded</option>
+                      {sireOptions.map(x => <option key={x.id} value={x.id}>{x.tag}{x.name ? ' · ' + x.name : ''}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-sm font-semibold">
+                    Dam (mother)
+                    <select value={animal.damId || ''} onChange={e => setAnimal({ ...animal, damId: e.target.value })} className="mt-1 w-full border rounded-xl px-3 py-2 bg-white font-normal">
+                      <option value="">Unknown / not recorded</option>
+                      {damOptions.map(x => <option key={x.id} value={x.id}>{x.tag}{x.name ? ' · ' + x.name : ''}</option>)}
+                    </select>
+                  </label>
+                </div>
+                {parentWarn && <p className="mt-3 text-sm rounded-xl bg-amber-100 text-amber-900 px-3 py-2">⚠ Inbreeding warning: the sire and dam are closely related. {parentWarn}</p>}
+              </div>
+              <label className="text-sm font-semibold flex items-center gap-2">
+                <input type="checkbox" checked={!!animal.forSale} onChange={e => setAnimal({ ...animal, forSale: e.target.checked })} />
+                Mark as for sale
+              </label>
               {['Doe','Ewe','Cow','Hen','Female'].includes(animal.sex) && (
                 <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                   <div className="font-bold text-amber-900 mb-3">Female breeding record</div>
                   <div className="grid md:grid-cols-2 gap-4">
+                    <label className="text-sm font-semibold">
+                      Mated with (sire)
+                      <select value={animal.matingSireId || ''} onChange={e => setAnimal({ ...animal, matingSireId: e.target.value })} className="mt-1 w-full border rounded-xl px-3 py-2 bg-white font-normal">
+                        <option value="">Not recorded</option>
+                        {sireOptions.map(x => <option key={x.id} value={x.id}>{x.tag}{x.name ? ' · ' + x.name : ''}</option>)}
+                      </select>
+                    </label>
                     <Field
                       l="Date of mating"
                       type="date"
                       v={animal.matingDate}
-                      c={v => setAnimal({ ...animal, matingDate: v })}
+                      c={v => setAnimal({ ...animal, matingDate: v, expectedDueDate: v && GESTATION[animal.species] ? addDays(v, GESTATION[animal.species]) : animal.expectedDueDate })}
                     />
                     <Field
                       l="Expected due date"
@@ -895,14 +1030,27 @@ export default function App() {
                       v={animal.expectedDueDate}
                       c={v => setAnimal({ ...animal, expectedDueDate: v })}
                     />
+                    <Field
+                      l="Date of last kidding / birth"
+                      type="date"
+                      v={animal.lastKiddingDate}
+                      c={v => setAnimal({ ...animal, lastKiddingDate: v })}
+                    />
+                    <Select
+                      l="Breeding status"
+                      v={animal.reproStatus}
+                      opts={['', 'Pregnant', 'Lactating', 'Dry']}
+                      c={v => setAnimal({ ...animal, reproStatus: v })}
+                    />
                   </div>
-                  <p className="text-xs text-amber-800 mt-3">Enter the expected due date based on the mating date and species/breed gestation period.</p>
+                  {matingWarn && <p className="mt-3 text-sm rounded-xl bg-amber-100 text-amber-900 px-3 py-2">⚠ Inbreeding warning: this pairing is risky. {matingWarn}</p>}
+                  <p className="text-xs text-amber-800 mt-3">The expected due date fills in automatically from the mating date{GESTATION[animal.species] ? ' (about ' + GESTATION[animal.species] + ' days for ' + animal.species.toLowerCase() + 's)' : ''}. You can change it.{animal.matingDate && CYCLE[animal.species] ? ' If she is not pregnant, expect heat again around ' + dateText(addDays(animal.matingDate, CYCLE[animal.species])) + '.' : ''}</p>
                 </div>
               )}
               <Select
                 l="Status"
                 v={animal.status}
-                opts={['Active', 'Sold', 'Dead', 'Transferred', 'Retired']}
+                opts={['Active', 'Sold', 'Culled', 'Dead', 'Transferred', 'Retired']}
                 c={v => setAnimal({ ...animal, status: v })}
               />
               <Field
@@ -1123,6 +1271,7 @@ export default function App() {
                 opts={[
                   'Feed',
                   'Animals',
+                  'Poultry',
                   'Veterinary',
                   'Vaccines',
                   'Equipment',
@@ -1133,6 +1282,7 @@ export default function App() {
                 ]}
                 c={v => setForm({ ...form, category: v })}
               />
+              <Select l="Enterprise (for profit and loss)" v={form.enterprise || 'General'} opts={['General', 'Livestock', 'Poultry', 'Dairy', 'Crops']} c={v => setForm({ ...form, enterprise: v })} />
               <Field
                 l="Amount (KSh)"
                 type="number"
@@ -1227,36 +1377,47 @@ function Dashboard(p: any) {
   const hour = now.getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const today = now.toISOString().slice(0, 10);
-  const soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const month = today.slice(0, 7);
-  const birds = (p.poultry || []).reduce((s: number, x: any) => s + Number(x.currentBirds || x.initialBirds || 0), 0);
-  const inMonth = (p.finance || []).filter((x: any) => String(x.date).startsWith(month));
-  const incomeM = inMonth.filter((x: any) => x.type === 'income').reduce((s: number, x: any) => s + Number(x.amount || 0), 0);
-  const spendM = inMonth.filter((x: any) => x.type === 'expense').reduce((s: number, x: any) => s + Number(x.amount || 0), 0);
-  const expecting = p.animals.filter((x: Animal) => x.status === 'Active' && x.expectedDueDate && x.expectedDueDate >= today && x.expectedDueDate <= soon).length;
-  const overdue = (p.health || []).filter((x: any) => x.nextDue && String(x.nextDue).slice(0, 10) < today).length;
-  const sold = p.animals.filter((x: Animal) => x.status === 'Sold').length;
+  const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  const active: Animal[] = p.animals.filter((x: Animal) => x.status === 'Active');
+  const isPreg = (x: Animal) => x.reproStatus === 'Pregnant' || !!(x.expectedDueDate && x.expectedDueDate >= today);
+  const bySpecies: Record<string, Record<string, number>> = {};
+  active.forEach(x => { const s = x.species || 'Other', t = animalType(x); bySpecies[s] = bySpecies[s] || {}; bySpecies[s][t] = (bySpecies[s][t] || 0) + 1; });
+  const plural = (w: string) => /(sheep|cattle|poultry)$/i.test(w) ? w : w.endsWith('s') ? w : w + 's';
+  const gains = active.map(x => adg((p.weights || []).filter((w: any) => w.animalId === x.id))).filter((g): g is number => g !== null);
+  const herdAdg = gains.length ? Math.round(gains.reduce((s, g) => s + g, 0) / gains.length) : null;
+  const births = expectedBirths(p.animals, today, 30).slice(0, 5);
+  const dues = dueItems(p.health || [], p.animals, today).filter(d => d.days <= 14).slice(0, 5);
+  const batches = p.poultry || [];
+  const startBirds = batches.reduce((s: number, x: any) => s + Number(x.initialBirds || 0), 0);
+  const birds = batches.reduce((s: number, x: any) => s + Number(x.currentBirds || x.initialBirds || 0), 0);
+  const loss = startBirds ? Math.round(((startBirds - birds) / startBirds) * 1000) / 10 : 0;
+  const kgIn = (rows: any[], f: string) => Math.round(rows.reduce((s, x) => s + Number(x[f] || 0), 0) * 10) / 10;
+  const feedM = (p.feed || []).filter((x: any) => String(x.date).startsWith(month));
+  const pfM = (p.poultryFeed || []).filter((x: any) => String(x.date).startsWith(month));
+  const pfW = (p.poultryFeed || []).filter((x: any) => String(x.date).slice(0, 10) >= weekAgo);
+  const months = lastMonths(6);
+  const monthly = monthlyFinance(p.finance || [], months);
+  const cur = monthly[monthly.length - 1];
+  const topCats = categoryTotals(p.finance || [], 'expense', month + '-01', month + '-31').slice(0, 3);
+  const feedSpend = categoryTotals(p.finance || [], 'expense', month + '-01', month + '-31').find(c => c[0] === 'Feed')?.[1] || 0;
   const mortality = p.animals.length ? Math.round((p.dead / p.animals.length) * 1000) / 10 : 0;
-  const stats: [any, string, string, string, string, string][] = [
-    [PawPrint, 'bg-emerald-800', String(p.active), 'Animals', 'Individual records', 'Livestock'],
-    [Bird, 'bg-emerald-500', String(birds), 'Poultry', 'Birds across batches', 'Poultry'],
-    [Milk, 'bg-sky-500', sumQty(p.production || [], 'Milk', month) + ' L', 'Milk this month', 'Litres recorded', 'Production'],
-    [Egg, 'bg-yellow-500', String(sumQty(p.production || [], 'Eggs', month)), 'Eggs this month', 'Eggs collected', 'Production'],
-    [CircleDollarSign, 'bg-amber-600', money(incomeM), 'Income this month', 'Sales and other income', 'Finances'],
-    [ShoppingBag, 'bg-rose-400', money(spendM), 'Spend this month', 'Net ' + money(incomeM - spendM), 'Finances'],
+  const stats: [any, string, string, string, string][] = [
+    [PawPrint, 'bg-emerald-800', String(active.length), 'Animals', 'Livestock'],
+    [Bird, 'bg-emerald-500', String(birds), 'Birds', 'Poultry'],
+    [Milk, 'bg-sky-500', sumQty(p.production || [], 'Milk', month) + ' L', 'Milk this month', 'Production'],
+    [Egg, 'bg-yellow-500', String(sumQty(p.production || [], 'Eggs', month)), 'Eggs this month', 'Production'],
+    [CircleDollarSign, 'bg-amber-600', money(cur.income), 'Income this month', 'Finances'],
+    [ShoppingBag, 'bg-rose-400', money(cur.expense), 'Spend this month', 'Finances'],
   ];
-  const snap: [any, string, string, string][] = [
-    [PawPrint, String(expecting), 'Expecting', expecting ? 'Births due within 30 days' : 'No near-term births flagged'],
-    [ShieldCheck, String(p.due), 'Health due', 'Next due dates within 30 days'],
-    [Store, String(sold), 'Sold', 'Animals marked as sold'],
-    [Activity, mortality + '%', 'Mortality', p.dead + ' recorded ' + (p.dead === 1 ? 'death' : 'deaths')],
-  ];
-  const actions: [any, string, string, string][] = [
-    [PawPrint, 'Livestock register', 'Add records, track weights and run bulk health actions.', 'Livestock'],
-    [ShieldCheck, 'Health records', 'Vaccination, deworming and treatment schedules.', 'Health'],
-    [CircleDollarSign, 'Record finances', 'Capture sales, expenses and feed purchases.', 'Finances'],
-    [Store, 'Marketplace', 'Advertise animals and produce for sale.', 'Marketplace'],
-  ];
+  const Panel = (q: { title: string; page: string; children: any }) => (
+    <div className="bg-white border rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-3"><h3 className="font-black">{q.title}</h3><button onClick={() => p.setPage(q.page)} className="text-xs font-semibold text-emerald-700">View all ›</button></div>
+      {q.children}
+    </div>
+  );
+  const Mini = (q: { v: string; l: string }) => <div className="rounded-xl bg-stone-50 px-3 py-2"><div className="text-lg font-black leading-tight">{q.v}</div><div className="text-[11px] text-slate-500">{q.l}</div></div>;
+  const LV: Record<string, string> = { danger: 'bg-rose-50 text-rose-800 border-rose-200', warn: 'bg-amber-50 text-amber-900 border-amber-200', info: 'bg-sky-50 text-sky-900 border-sky-200' };
   return (
     <div className="space-y-4">
       <div>
@@ -1285,52 +1446,72 @@ function Dashboard(p: any) {
         {err && <p className="text-sm text-rose-600 mt-1">{err}</p>}
         <p className="text-slate-500 text-sm mt-1">Your farm at a glance.</p>
       </div>
+      {p.notices.length ? (
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
+          {p.notices.slice(0, 3).map((n: any) => (
+            <button key={n.id} onClick={() => p.setPage(n.page)} className={'text-left rounded-xl border px-3 py-2 ' + LV[n.level]}><div className="font-bold text-sm">{n.title}</div><div className="text-xs opacity-90">{n.text}</div></button>
+          ))}
+          {p.notices.length > 3 && <div className="text-xs text-slate-500 self-center px-1">+ {p.notices.length - 3} more in the bell above</div>}
+        </div>
+      ) : (
+        <div className="rounded-xl bg-emerald-50 text-emerald-800 text-sm px-3 py-2">Everything is up to date. No reminders or alerts right now.</div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-3">
-        {stats.map(([Icon, bg, value, label, sub, page]) => (
+        {stats.map(([Icon, bg, value, label, page]) => (
           <button key={label} onClick={() => p.setPage(page)} className="text-left bg-white border rounded-2xl p-4 hover:shadow-md transition-shadow">
-            <span className={'w-10 h-10 rounded-xl grid place-items-center text-white ' + bg}><Icon size={20} /></span>
-            <div className="text-2xl font-black mt-3 leading-none">{value}</div>
+            <span className={'w-9 h-9 rounded-xl grid place-items-center text-white ' + bg}><Icon size={18} /></span>
+            <div className="text-xl sm:text-2xl font-black mt-3 leading-none">{value}</div>
             <div className="text-[11px] uppercase tracking-wider text-slate-500 mt-1.5">{label}</div>
-            <div className="border-t mt-3 pt-2 text-xs text-slate-600">{sub}</div>
           </button>
         ))}
       </div>
-      <div className="grid xl:grid-cols-[1.5fr_1fr] gap-3">
-        <div className="bg-white border rounded-2xl p-4">
-          <h3 className="text-lg font-black">Operational snapshot</h3>
-          <p className="text-slate-500 mb-4">Health and breeding signals across your farm</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            {snap.map(([Icon, value, label, sub]) => (
-              <div key={label} className="border rounded-xl p-3">
-                <div className="flex items-center justify-between">
-                  <span className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center"><Icon size={16} /></span>
-                  <span className="text-xl font-black">{value}</span>
-                </div>
-                <div className="font-bold text-sm mt-2">{label}</div>
-                <div className="text-xs text-slate-500 mt-1">{sub}</div>
-              </div>
-            ))}
+      <div className="grid lg:grid-cols-2 gap-3">
+        <Panel title="Livestock" page="Livestock">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
+            <Mini v={String(active.length)} l="Active" /><Mini v={String(active.filter(isPreg).length)} l="Pregnant" /><Mini v={String(active.filter(x => x.reproStatus === 'Lactating').length)} l="Lactating" /><Mini v={String(active.filter(x => x.forSale).length)} l="For sale" /><Mini v={herdAdg !== null ? herdAdg + ' g' : '—'} l="Daily gain" />
           </div>
-          <div className={'mt-3 rounded-xl px-3 py-2 text-sm ' + (overdue ? 'bg-rose-50 text-rose-700' : 'bg-stone-100 text-slate-700')}>
-            {overdue ? overdue + ' health ' + (overdue === 1 ? 'action is' : 'actions are') + ' overdue. Open Health to review.' : 'No urgent livestock alerts right now.'}
+          {Object.keys(bySpecies).length ? Object.entries(bySpecies).map(([sp, tm]) => (
+            <div key={sp} className="flex items-center gap-3 py-1.5 border-t text-sm"><span className="text-xl w-7">{iconOf(sp)}</span><b className="w-24">{plural(sp)} {Object.values(tm).reduce((s, n) => s + n, 0)}</b><span className="text-slate-500">{Object.entries(tm).map(([t, n]) => n + ' ' + (n === 1 ? t : plural(t))).join(' · ')}</span></div>
+          )) : <p className="text-sm text-slate-500">No active animals yet. Add your first animal to get started.</p>}
+        </Panel>
+        <Panel title="Breeding" page="Livestock">
+          {births.length ? births.map(b => (
+            <div key={b.animal.id} className="flex justify-between gap-3 py-1.5 border-t first:border-0 text-sm"><span><b>{b.animal.tag}</b> {b.animal.name ? '· ' + b.animal.name : ''}</span><span className={b.days < 0 ? 'text-rose-600 font-semibold' : 'text-slate-600'}>{b.days < 0 ? Math.abs(b.days) + ' days overdue' : b.days === 0 ? 'Due today' : 'in ' + b.days + ' days'} · {dateText(b.due)}</span></div>
+          )) : <p className="text-sm text-slate-500">No births expected in the next 30 days.</p>}
+          <p className="text-xs text-slate-500 mt-3">{active.filter(isPreg).length} pregnant · {active.filter(x => x.reproStatus === 'Lactating').length} lactating · {active.filter(x => x.reproStatus === 'Dry').length} dry</p>
+        </Panel>
+        <Panel title="Health" page="Health">
+          {dues.length ? dues.map(d => (
+            <div key={d.key} className="flex justify-between gap-3 py-1.5 border-t first:border-0 text-sm"><span><b>{d.label}</b> · {d.type}</span><span className={d.days < 0 ? 'text-rose-600 font-semibold' : d.days <= 3 ? 'text-amber-700 font-semibold' : 'text-slate-600'}>{d.days < 0 ? Math.abs(d.days) + ' days overdue' : d.days === 0 ? 'Today' : 'in ' + d.days + ' days'}</span></div>
+          )) : <p className="text-sm text-slate-500">All vaccinations and dewormings are up to date for the next 14 days.</p>}
+          <p className="text-xs text-slate-500 mt-3">Mortality {mortality}% · {p.dead} recorded {p.dead === 1 ? 'death' : 'deaths'}</p>
+        </Panel>
+        <Panel title="Poultry" page="Poultry">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <Mini v={String(birds)} l={startBirds ? 'Birds now (of ' + startBirds + ')' : 'Birds now'} /><Mini v={loss + '%'} l="Bird losses" /><Mini v={String(sumQty(p.production || [], 'Eggs', month))} l="Eggs this month" /><Mini v={kgIn(pfW, 'kg') + ' kg'} l="Feed eaten, 7 days" />
           </div>
-        </div>
-        <div className="bg-white border rounded-2xl p-4">
-          <h3 className="text-lg font-black">Quick actions</h3>
-          <p className="text-slate-500 mb-4">Jump to the sections you use most</p>
-          <div className="space-y-2">
-            {actions.map(([Icon, title, text, page]) => (
-              <button key={title} onClick={() => p.setPage(page)} className="w-full text-left border rounded-xl p-3 flex gap-3 items-start hover:bg-stone-50">
-                <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0"><Icon size={18} /></span>
-                <span><b>{title} <span className="text-slate-400">&#8599;</span></b><span className="block text-xs text-slate-500 mt-0.5">{text}</span></span>
-              </button>
-            ))}
+          <p className="text-xs text-slate-500 mt-3">{batches.length} {batches.length === 1 ? 'batch' : 'batches'} · {money((p.birdBuys || []).reduce((s: number, x: any) => s + Number(x.amount || 0), 0))} spent buying birds</p>
+        </Panel>
+        <Panel title="Feed" page="Feed">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <Mini v={kgIn(feedM, 'quantity') + ' kg'} l="Bought this month" /><Mini v={money(feedM.reduce((s: number, x: any) => s + Number(x.cost || 0), 0))} l="Feed cost" /><Mini v={kgIn(pfM, 'kg') + ' kg'} l="Poultry ate this month" /><Mini v={cur.expense ? Math.round((feedSpend / cur.expense) * 100) + '%' : '—'} l="Of this month's spend" />
           </div>
-        </div>
+        </Panel>
+        <Panel title="Finances" page="Finances">
+          <div className="flex items-baseline gap-3 mb-2"><span className={'text-2xl font-black ' + (cur.income - cur.expense < 0 ? 'text-rose-600' : '')}>{money(cur.income - cur.expense)}</span><span className="text-xs text-slate-500">net this month</span></div>
+          <GroupedBars aName="Income" bName="Spend" data={monthly.map(m => ({ label: monthLabel(m.month), a: m.income, b: m.expense }))} />
+          {topCats.length > 0 && <p className="text-xs text-slate-500 mt-2">Top spending: {topCats.map(([c, v]) => c + ' ' + money(v)).join(' · ')}</p>}
+        </Panel>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {([[PawPrint, 'Livestock register', 'Livestock'], [ShieldCheck, 'Health records', 'Health'], [CircleDollarSign, 'Record finances', 'Finances'], [Store, 'Marketplace', 'Marketplace']] as [any, string, string][]).map(([Icon, t, pg]) => (
+          <button key={t} onClick={() => p.setPage(pg)} className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 text-sm font-semibold hover:bg-stone-50"><Icon size={16} className="text-emerald-700" />{t}</button>
+        ))}
       </div>
     </div>
   );
 }
+
 const TYPE_STYLE: Record<string, string> = {
   Buck: 'bg-blue-50 text-blue-700', Doe: 'bg-rose-50 text-rose-700', Ewe: 'bg-fuchsia-50 text-fuchsia-700',
   Ram: 'bg-indigo-50 text-indigo-700', Cow: 'bg-amber-50 text-amber-700', Bull: 'bg-orange-50 text-orange-700',
@@ -1351,9 +1532,15 @@ function Animals(p: any) {
   const [typeF, setTypeF] = useState('All');
   const [speciesF, setSpeciesF] = useState('All');
   const [originF, setOriginF] = useState('All');
+  const [condF, setCondF] = useState('All');
+  const [sel, setSel] = useState<string[]>([]);
   const [open, setOpen] = useState('');
   const [menu, setMenu] = useState('');
   const today = new Date().toISOString().slice(0, 10);
+  // newest first; a function declaration so the growth calculations below can use it
+  function wOf(id: string): any[] {
+    return (p.weights || []).filter((w: any) => w.animalId === id).sort((x: any, y: any) => String(y.date).localeCompare(String(x.date)));
+  }
   const all: Animal[] = p.animals;
   const inTab = (x: Animal, t: string) => t === 'Active' ? x.status === 'Active' : t === 'Sold' ? x.status === 'Sold' : !['Active', 'Sold'].includes(x.status);
   const count = (t: string) => all.filter(x => inTab(x, t)).length;
@@ -1368,11 +1555,27 @@ function Animals(p: any) {
   const originOf = (x: Animal) => (x.origin === 'Purchased' || (!x.origin && x.source === 'Purchased') ? 'Purchased' : 'Farm Born');
   const base = all.filter(x => inTab(x, tab) && (speciesF === 'All' || (x.species || 'Other') === speciesF) && (typeF === 'All' || animalType(x) === typeF));
   const originCount = (o: string) => base.filter(x => o === 'All' || originOf(x) === o).length;
-  const rows = base.filter(x => originF === 'All' || originOf(x) === originF);
-  const wOf = (id: string) => (p.weights || []).filter((w: any) => w.animalId === id).sort((x: any, y: any) => String(y.date).localeCompare(String(x.date)));
+  const isPreg = (x: Animal) => x.reproStatus === 'Pregnant' || !!(x.expectedDueDate && x.expectedDueDate >= today);
+  const cond = (x: Animal, c: string) => c === 'Pregnant' ? isPreg(x) : c === 'Lactating' ? x.reproStatus === 'Lactating' : c === 'Dry' ? x.reproStatus === 'Dry' : c === 'For sale' ? !!x.forSale : true;
+  const afterOrigin = base.filter(x => originF === 'All' || originOf(x) === originF);
+  const condCount = (c: string) => afterOrigin.filter(x => cond(x, c)).length;
+  const rows = afterOrigin.filter(x => condF === 'All' || cond(x, condF));
+  const tagOf = (id?: string) => (p.everyone || all).find((x: Animal) => x.id === id)?.tag || '';
+  const adgOf = (id: string) => adg(wOf(id));
+  const gains = rows.map(x => adgOf(x.id)).filter((g): g is number => g !== null);
+  const herdAdg = gains.length ? Math.round(gains.reduce((s, g) => s + g, 0) / gains.length) : null;
+  const ids = sel.filter(id => rows.some(r => r.id === id));
+  const toggle = (id: string) => setSel(sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  const heat = (x: Animal) => {
+    const c = CYCLE[x.species];
+    if (!c || !FEMALE_TYPES.includes(x.sex)) return '';
+    if (x.matingDate && addDays(x.matingDate, c) >= today) return dateText(addDays(x.matingDate, c)) + ' (if not pregnant)';
+    if (x.lastKiddingDate && !isPreg(x)) return 'about ' + dateText(addDays(x.lastKiddingDate, 45));
+    return '';
+  };
   const nextVacc = (x: Animal) => {
     const ds = (p.health || [])
-      .filter((h: any) => String(h.type).toLowerCase() === 'vaccination' && h.nextDue && (h.animalId === x.id || h.animalId === 'ALL'))
+      .filter((h: any) => String(h.type).toLowerCase() === 'vaccination' && h.nextDue && (h.animalId === x.id || h.animalId === 'ALL' || (h.animalIds || []).includes(x.id)))
       .map((h: any) => String(h.nextDue).slice(0, 10)).sort();
     return ds.length ? (ds.find((d: string) => d >= today) || ds[ds.length - 1]) : '';
   };
@@ -1433,6 +1636,25 @@ function Animals(p: any) {
           <button key={k} onClick={() => setOriginF(k)} className={'px-3 py-1.5 rounded-xl border text-sm font-semibold ' + (originF === k ? 'bg-emerald-500 border-emerald-500' : 'bg-white')}>{l} ({originCount(k)})</button>
         ))}
       </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-sm text-slate-500 mr-1">Condition</span>
+        {['All', 'Pregnant', 'Lactating', 'Dry', 'For sale'].map(c => (
+          <button key={c} onClick={() => setCondF(c)} className={'px-3 py-1.5 rounded-xl border text-sm font-semibold ' + (condF === c ? 'bg-emerald-500 border-emerald-500' : 'bg-white')}>{c === 'All' ? 'All' : c} ({c === 'All' ? afterOrigin.length : condCount(c)})</button>
+        ))}
+      </div>
+      {herdAdg !== null && <p className="text-sm text-slate-600 mb-3">Average daily gain: <b>{herdAdg} g/day</b> across {gains.length} {gains.length === 1 ? 'animal' : 'animals'} with two or more weighings.</p>}
+      {ids.length > 0 && (
+        <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 flex flex-wrap items-center gap-2">
+          <b className="mr-2">{ids.length} selected</b>
+          <button onClick={() => { p.onBulkHealth('Vaccination', ids); setSel([]); }} className="bg-white border rounded-xl px-3 py-1.5 text-sm font-semibold">Mark vaccinated</button>
+          <button onClick={() => { p.onBulkHealth('Deworming', ids); setSel([]); }} className="bg-white border rounded-xl px-3 py-1.5 text-sm font-semibold">Mark dewormed</button>
+          <select value="" onChange={e => { if (e.target.value && confirm('Set status to ' + e.target.value + ' for ' + ids.length + ' animals?')) { p.onBulkUpdate(ids, { status: e.target.value }); setSel([]); } }} className="border rounded-xl px-3 py-1.5 text-sm bg-white"><option value="">Change status…</option>{['Active', 'Sold', 'Culled', 'Dead', 'Transferred', 'Retired'].map(s => <option key={s}>{s}</option>)}</select>
+          <select value="" onChange={e => { if (e.target.value) { p.onBulkUpdate(ids, { reproStatus: e.target.value === 'None' ? '' : e.target.value }); setSel([]); } }} className="border rounded-xl px-3 py-1.5 text-sm bg-white"><option value="">Breeding status…</option>{['Pregnant', 'Lactating', 'Dry', 'None'].map(s => <option key={s}>{s}</option>)}</select>
+          <button onClick={() => { p.onBulkUpdate(ids, { forSale: true }); setSel([]); }} className="bg-white border rounded-xl px-3 py-1.5 text-sm font-semibold">Mark for sale</button>
+          <button onClick={() => { p.onBulkUpdate(ids, { forSale: false }); setSel([]); }} className="bg-white border rounded-xl px-3 py-1.5 text-sm font-semibold">Remove from sale</button>
+          <button onClick={() => setSel([])} className="ml-auto text-sm text-slate-600 underline">Clear</button>
+        </div>
+      )}
       <div className="grid md:grid-cols-[1fr_auto] gap-3 mb-4">
         <input value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="Search by tag, name, breed…" className="border rounded-xl px-4 py-3 bg-white" />
         <select value={typeF} onChange={e => setTypeF(e.target.value)} className="border rounded-xl px-4 py-3 bg-white"><option value="All">All types</option>{types.map(t => <option key={t}>{t}</option>)}</select>
@@ -1442,21 +1664,24 @@ function Animals(p: any) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide text-slate-500">
-                {['Tag ID', 'Type', 'Breed', 'DOB', 'Weight', 'Next vacc.', 'Health', ''].map(h => <th key={h} className="text-left p-4 font-semibold">{h}</th>)}
+                <th className="p-4 w-8"><input type="checkbox" aria-label="Select all" checked={rows.length > 0 && ids.length === rows.length} onChange={e => setSel(e.target.checked ? rows.map(r => r.id) : [])} /></th>
+                {['Tag ID', 'Type', 'Breed', 'DOB', 'Weight', 'ADG', 'Next vacc.', 'Health', ''].map(h => <th key={h} className="text-left p-4 font-semibold">{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-slate-500">No animals here yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={10} className="p-10 text-center text-slate-500">No animals here yet.</td></tr>}
               {rows.map(a => {
                 const t = animalType(a), [hl, hc] = health(a), nv = nextVacc(a), w = wOf(a.id);
                 return (
                   <Fragment key={a.id}>
                     <tr className="border-t cursor-pointer hover:bg-stone-50" onClick={() => setOpen(open === a.id ? '' : a.id)}>
-                      <td className="p-4 whitespace-nowrap"><span className="font-mono font-bold bg-stone-100 rounded-lg px-2.5 py-1.5">{a.tag}</span>{a.name && <span className="block text-xs text-slate-500 mt-1">{a.name}</span>}{originOf(a) === 'Purchased' && <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Purchased</span>}</td>
+                      <td className="p-4" onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={'Select ' + a.tag} checked={sel.includes(a.id)} onChange={() => toggle(a.id)} /></td>
+                      <td className="p-4 whitespace-nowrap"><span className="font-mono font-bold bg-stone-100 rounded-lg px-2.5 py-1.5">{a.tag}</span>{a.name && <span className="block text-xs text-slate-500 mt-1">{a.name}</span>}{originOf(a) === 'Purchased' && <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Purchased</span>}{a.forSale && <span className="inline-block mt-1 ml-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-50 text-sky-700">For sale</span>}</td>
                       <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + (TYPE_STYLE[t] || 'bg-stone-100 text-stone-700')}>{iconOf(a.species)} {t}</span></td>
                       <td className="p-4">{a.breed || '—'}</td>
                       <td className="p-4 whitespace-nowrap">{a.dob ? dateText(a.dob) : '--'}</td>
                       <td className="p-4 whitespace-nowrap">{w[0] ? w[0].weight + ' kg' : '--'}</td>
+                      <td className="p-4 whitespace-nowrap">{adgOf(a.id) !== null ? adgOf(a.id) + ' g/d' : '--'}</td>
                       <td className="p-4 whitespace-nowrap">{nv ? dateText(nv) : '--'}</td>
                       <td className="p-4"><span className={'px-3 py-1 rounded-full font-semibold ' + hc}>{hl}</span></td>
                       <td className="p-4 relative" onClick={e => e.stopPropagation()}>
@@ -1467,6 +1692,7 @@ function Animals(p: any) {
                             <div className="absolute right-4 top-12 z-20 w-48 bg-white border rounded-xl shadow-lg py-1 text-left">
                               <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setOpen(a.id); setMenu(''); }}>View details</button>
                               <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setMenu(''); p.weight(a.id); }}>Record weight</button>
+                              <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setMenu(''); p.onBulkUpdate([a.id], { forSale: !a.forSale }); }}>{a.forSale ? 'Remove from sale' : 'Mark for sale'}</button>
                               <button className="w-full text-left px-4 py-2 hover:bg-stone-50" onClick={() => { setMenu(''); p.edit(a); }}>Edit</button>
                               <button className="w-full text-left px-4 py-2 hover:bg-stone-50 text-rose-600" onClick={() => { setMenu(''); p.remove(a.id); }}>Delete</button>
                             </div>
@@ -1476,9 +1702,9 @@ function Animals(p: any) {
                     </tr>
                     {open === a.id && (
                       <tr className="bg-stone-50">
-                        <td colSpan={8} className="p-4">
+                        <td colSpan={10} className="p-4">
                           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm mb-4">
-                            {([['Species', a.species], ['Sex', a.sex], ['Origin', a.origin || a.source], ['Status', a.status], ['Mating date', a.matingDate ? dateText(a.matingDate) : ''], ['Expected due', a.expectedDueDate ? dateText(a.expectedDueDate) : ''], ['Purchase price', a.purchasePrice ? 'KSh ' + Number(a.purchasePrice).toLocaleString() : ''], ['Notes', a.notes]] as [string, string][]).filter(r => r[1]).map(([k, v]) => (
+                            {([['Species', a.species], ['Sex', a.sex], ['Origin', a.origin || a.source], ['Status', a.status], ['Sire', tagOf(a.sireId)], ['Dam', tagOf(a.damId)], ['Breeding status', a.reproStatus || (isPreg(a) ? 'Pregnant' : '')], ['Mated with', tagOf(a.matingSireId)], ['Mating date', a.matingDate ? dateText(a.matingDate) : ''], ['Expected due', a.expectedDueDate ? dateText(a.expectedDueDate) : ''], ['Next heat (estimate)', heat(a)], ['Last kidding / birth', a.lastKiddingDate ? dateText(a.lastKiddingDate) : ''], ['Purchase price', a.purchasePrice ? 'KSh ' + Number(a.purchasePrice).toLocaleString() : ''], ['Listed for sale', a.forSale ? 'Yes' : ''], ['Notes', a.notes]] as [string, string][]).filter(r => r[1]).map(([k, v]) => (
                               <div key={k}><div className="text-xs uppercase text-slate-500">{k}</div><div className="font-semibold">{v}</div></div>
                             ))}
                           </div>
@@ -1486,10 +1712,16 @@ function Animals(p: any) {
                             <b>Weight history</b>
                             <button onClick={() => p.weight(a.id)} className="bg-emerald-500 px-3 py-1.5 rounded-xl font-bold text-sm">+ Record weight</button>
                           </div>
+                          {w.length >= 2 && (
+                            <div className="bg-white border rounded-xl p-3 mb-3">
+                              <div className="text-xs text-slate-500 mb-1">Weight over time (kg){adgOf(a.id) !== null ? ' · average gain ' + adgOf(a.id) + ' g/day' : ''}</div>
+                              <MiniChart kind="line" color="#0f766e" data={[...w].reverse().map((x: any) => ({ label: dateText(x.date), value: Number(x.weight) }))} />
+                            </div>
+                          )}
                           {w.length ? (
                             <div className="overflow-auto">
                               <table className="w-full text-sm bg-white border rounded-xl">
-                                <thead><tr>{['Date', 'Weight', 'Change', 'Notes', 'Actions'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead>
+                                <thead><tr>{['Date', 'Weight', 'Change', 'ADG', 'Notes', 'Actions'].map(h => <th key={h} className="text-left p-3 text-slate-500">{h}</th>)}</tr></thead>
                                 <tbody>
                                   {w.map((x: any, i: number, list: any[]) => {
                                     const prev = list[i + 1];
@@ -1499,6 +1731,7 @@ function Animals(p: any) {
                                         <td className="p-3 whitespace-nowrap">{dateText(x.date)}</td>
                                         <td className="p-3 whitespace-nowrap">{x.weight} kg</td>
                                         <td className="p-3 whitespace-nowrap">{diff === null ? '—' : (diff > 0 ? '+' : '') + Math.round(diff * 100) / 100 + ' kg'}</td>
+                                        <td className="p-3 whitespace-nowrap">{prev && Date.parse(x.date) > Date.parse(prev.date) ? Math.round(((Number(x.weight) - Number(prev.weight)) / ((Date.parse(x.date) - Date.parse(prev.date)) / 86400000)) * 1000) + ' g/day' : '—'}</td>
                                         <td className="p-3">{x.notes || '—'}</td>
                                         <td className="p-3 whitespace-nowrap">
                                           <button className="mr-1 p-2 text-slate-600" aria-label="Edit weight" onClick={() => p.editWeight(x)}><Edit3 size={16} /></button>
@@ -1633,6 +1866,7 @@ function AnimalSelect(p: any) {
         className="mt-1 w-full border rounded-xl px-3 py-2 bg-white font-normal"
       >
         <option value="">Select animal</option>
+        {p.v === 'GROUP' && <option value="GROUP">Selected animals</option>}
         {p.allowAll && <option value="ALL">All active animals</option>}
         {p.animals.map((a: Animal) => (
           <option key={a.id} value={a.id}>
@@ -1670,97 +1904,6 @@ function Modal(p: any) {
 
 function sumQty(rows: any[], type: string, month: string) {
   return rows.filter(x => (!type || x.type === type) && String(x.date).startsWith(month)).reduce((s, x) => s + Number(x.quantity || 0), 0);
-}
-function downloadCSV(name: string, rows: any[]) {
-  if (!rows.length) return alert('No records to export.');
-  const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r)))).filter(c => c !== 'userId');
-  const esc = (v: any) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const csv = '\uFEFF' + [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\r\n');
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  link.download = name.toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv';
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-function Reports(p: any) {
-  const [from, setFrom] = useState(''), [to, setTo] = useState('');
-  const inR = (r: any) => { const d = String(r.date || '').slice(0, 10); return (!from || d >= from) && (!to || d <= to); };
-  const fin = (p.data.Finances as any[]).filter(inR), prod = (p.data.Production as any[]).filter(inR), fd = (p.data.Feed as any[]).filter(inR);
-  const inc = fin.filter(x => x.type === 'income').reduce((s, x) => s + Number(x.amount || 0), 0);
-  const exp = fin.filter(x => x.type === 'expense').reduce((s, x) => s + Number(x.amount || 0), 0);
-  const byCat: Record<string, number> = {};
-  fin.forEach(x => { byCat[x.category] = (byCat[x.category] || 0) + (x.type === 'income' ? 1 : -1) * Number(x.amount || 0); });
-  const qty = (rows: any[], t: string) => rows.filter(x => x.type === t).reduce((s, x) => s + Number(x.quantity || 0), 0);
-  return (
-    <div className="space-y-5">
-      <div className="bg-white border rounded-2xl p-5 flex flex-wrap gap-4 items-end">
-        <Field l="From" type="date" v={from} c={setFrom} />
-        <Field l="To" type="date" v={to} c={setTo} />
-        <button onClick={() => window.print()} className="bg-slate-950 text-white px-4 py-2.5 rounded-xl font-bold">Print report</button>
-      </div>
-      <div className="grid md:grid-cols-3 gap-4">
-        <Card label="Income" value={money(inc)} />
-        <Card label="Expenses" value={money(exp)} />
-        <Card label="Net" value={money(inc - exp)} />
-        <Card label="Milk (litres)" value={String(qty(prod, 'Milk'))} />
-        <Card label="Eggs" value={String(qty(prod, 'Eggs'))} />
-        <Card label="Feed (kg) / cost" value={fd.reduce((s, x) => s + Number(x.quantity || 0), 0) + ' kg / ' + money(fd.reduce((s, x) => s + Number(x.cost || 0), 0))} />
-      </div>
-      <div className="bg-white border rounded-2xl p-5">
-        <b>Net by category</b>
-        {Object.keys(byCat).length ? Object.entries(byCat).map(([k, v]) => (
-          <div key={k} className="flex justify-between border-t mt-2 pt-2 text-sm"><span>{k}</span><span>{money(v)}</span></div>
-        )) : <p className="text-sm text-slate-500 mt-2">No transactions in this period.</p>}
-      </div>
-      <div className="bg-white border rounded-2xl p-5">
-        <b>Export to CSV (opens in Excel)</b>
-        <div className="flex flex-wrap gap-2 mt-3">
-          {Object.keys(p.data).map(k => (
-            <button key={k} onClick={() => downloadCSV(k, p.data[k])} className="border rounded-xl px-3 py-2 text-sm font-semibold flex gap-2"><Download size={14} />{k}</button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MiniChart({ data, kind, color }: { data: { label: string; value: number }[]; kind: 'bar' | 'line'; color: string }) {
-  const W = 600, H = 190, L = 34, B = 24, T = 10, R = 8;
-  const max = Math.max(1, ...data.map(d => d.value));
-  const nice = Math.max(4, Math.ceil(max / 4) * 4);
-  const iw = W - L - R, ih = H - T - B, n = data.length;
-  const x = (i: number) => L + (n <= 1 ? iw / 2 : (i * iw) / (n - 1));
-  const bw = Math.max(2, iw / Math.max(n, 1) - 2);
-  const y = (v: number) => T + ih - (v / nice) * ih;
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(nice * f));
-  const labelIdx = n <= 1 ? [0] : n <= 12 ? data.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img">
-      {ticks.map(t => (
-        <g key={t}>
-          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e7e5e4" />
-          <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#78716c">{t}</text>
-        </g>
-      ))}
-      {kind === 'bar'
-        ? data.map((d, i) => (
-            <rect key={i} x={L + (i * iw) / n + 1} y={y(d.value)} width={bw} height={Math.max(0, T + ih - y(d.value))} fill={color} rx="2">
-              <title>{d.label}: {d.value}</title>
-            </rect>
-          ))
-        : (
-          <>
-            <polyline fill="none" stroke={color} strokeWidth="2.5" points={data.map((d, i) => `${x(i)},${y(d.value)}`).join(' ')} />
-            {n <= 31 && data.map((d, i) => (
-              <circle key={i} cx={x(i)} cy={y(d.value)} r="3" fill={color}><title>{d.label}: {d.value}</title></circle>
-            ))}
-          </>
-        )}
-      {labelIdx.map(i => (
-        <text key={i} x={kind === 'bar' ? L + (i * iw) / n + bw / 2 : x(i)} y={H - 6} textAnchor={n <= 12 ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={n <= 12 ? 9 : 10} fill="#78716c">{data[i]?.label}</text>
-      ))}
-    </svg>
-  );
 }
 function AdminCharts({ o }: { o: any }) {
   const [days, setDays] = useState(30);
@@ -1823,38 +1966,7 @@ function StatCard({ icon: Icon, label, value }: { icon: any; label: string; valu
     </div>
   );
 }
-function GroupedBars({ data, aName, bName }: { data: { label: string; a: number; b: number }[]; aName: string; bName: string }) {
-  const W = 600, H = 190, L = 34, B = 24, T = 10, R = 8;
-  const max = Math.max(1, ...data.map(d => Math.max(d.a, d.b)));
-  const nice = Math.max(4, Math.ceil(max / 4) * 4);
-  const iw = W - L - R, ih = H - T - B, n = data.length;
-  const gw = iw / Math.max(n, 1), bw = Math.max(2, (gw - 6) / 2);
-  const y = (v: number) => T + ih - (v / nice) * ih;
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(nice * f));
-  return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img">
-        {ticks.map(t => (
-          <g key={t}>
-            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e7e5e4" />
-            <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#78716c">{t}</text>
-          </g>
-        ))}
-        {data.map((d, i) => (
-          <g key={i}>
-            <rect x={L + i * gw + 3} y={y(d.a)} width={bw} height={Math.max(0, T + ih - y(d.a))} fill="#22c55e" rx="2"><title>{d.label} {aName}: {d.a}</title></rect>
-            <rect x={L + i * gw + 3 + bw} y={y(d.b)} width={bw} height={Math.max(0, T + ih - y(d.b))} fill="#f59e0b" rx="2"><title>{d.label} {bName}: {d.b}</title></rect>
-            <text x={L + i * gw + gw / 2} y={H - 6} textAnchor="middle" fontSize="9" fill="#78716c">{d.label}</text>
-          </g>
-        ))}
-      </svg>
-      <div className="flex gap-4 text-sm mt-1">
-        <span className="flex items-center gap-2"><i className="inline-block w-3 h-3 rounded-sm bg-green-500" />{aName}</span>
-        <span className="flex items-center gap-2"><i className="inline-block w-3 h-3 rounded-sm bg-amber-500" />{bName}</span>
-      </div>
-    </div>
-  );
-}
+
 function AdminMonthly({ o }: { o: any }) {
   if (!o || !o.signupsByMonth) return null;
   const fmtM = (m: string) => new Date(m + '-01T00:00:00Z').toLocaleDateString('en-GB', { month: 'short', year: '2-digit', timeZone: 'UTC' });

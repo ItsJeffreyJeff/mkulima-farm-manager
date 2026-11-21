@@ -33,3 +33,8 @@ img {
     font-size: 16px;
   }
 }
+@media print {
+  aside, header, .no-print, .bottom-nav { display: none !important; }
+  main { margin-left: 0 !important; }
+  body { background: #fff !important; }
+}

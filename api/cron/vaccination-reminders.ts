@@ -32,7 +32,7 @@ export default async function handler(req: any, res: any) {
     const to = String(r.reminderEmail || emails[rec.user_id] || '').trim();
     if (!to) continue;
     const a: any = (animals || []).find(x => x.id === r.animalId && x.user_id === rec.user_id)?.data;
-    const label = r.animalId === 'ALL' ? 'all animals on the farm' : a ? [a.name, a.tag, a.species].filter(Boolean).join(' · ') : 'your animal';
+    const label = r.animalId === 'ALL' ? 'all animals on the farm' : r.animalId === 'GROUP' ? (r.animalCount || (r.animalIds || []).length) + ' selected animals' : a ? [a.name, a.tag, a.species].filter(Boolean).join(' · ') : 'your animal';
     const subject = days === 0 ? Noun + ' due today - Mkulima Farm Manager' : Noun + ' reminder - due in 3 days';
     const html = '<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>' + Noun + ' reminder</h2><p>A ' + noun + ' for <strong>' + esc(label) + '</strong> is due ' + (days === 0 ? 'today' : 'in 3 days') + '.</p><p><strong>' + (kind === 'deworming' ? 'Treatment' : 'Vaccine') + ':</strong> ' + esc(String(r.vaccine || Noun)) + '<br/><strong>Due date:</strong> ' + esc(due) + '</p><p>Open Mkulima Farm Manager to review the health record.</p></div>';
     const resp = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject, html }) });
