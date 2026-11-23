@@ -4,7 +4,7 @@ import { GroupedBars } from './charts';
 import { adg } from './breeding';
 import { animalType, buildNotices, categoryTotals, dueItems, enterpriseSummary, expectedBirths, inRange, lastMonths, lastWeighed, monthLabel, monthlyFinance, todayISO, type Rec } from './analytics';
 
-const money = (n: number) => 'KSh ' + Math.round(n || 0).toLocaleString();
+const money = (n: number) => 'KSh ' + Math.round(n || 0).toLocaleString().replace(/[\u00a0\u202f]/g, ' ');
 const kg = (n: number) => Math.round(n * 10) / 10 + ' kg';
 const sum = (rows: Rec[], f: string) => rows.reduce((s, x) => s + Number(x[f] || 0), 0);
 const dt = (s: string) => (s ? new Date(String(s).slice(0, 10) + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—');
@@ -33,7 +33,7 @@ const Panel = (p: { title: string; sub?: string; children: any }) => (
   </div>
 );
 const Stat = (p: { label: string; value: string; note?: string }) => (
-  <div className="bg-white border rounded-2xl p-4"><div className="text-xs uppercase tracking-wide text-slate-500">{p.label}</div><div className="text-2xl font-black mt-1">{p.value}</div>{p.note && <div className="text-xs text-slate-500 mt-1">{p.note}</div>}</div>
+  <div className="bg-white border rounded-2xl p-4 min-w-0"><div className="text-xs uppercase tracking-wide text-slate-500">{p.label}</div><div className="text-lg sm:text-2xl font-black mt-1 break-words leading-tight">{p.value}</div>{p.note && <div className="text-xs text-slate-500 mt-1">{p.note}</div>}</div>
 );
 const Table = (p: { heads: string[]; rows: (string | number)[][]; empty?: string }) => (
   <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{p.heads.map(h => <th key={h} className="text-left py-2 pr-4 text-xs uppercase tracking-wide text-slate-500">{h}</th>)}</tr></thead>

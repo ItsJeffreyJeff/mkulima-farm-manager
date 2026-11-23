@@ -89,11 +89,12 @@ const blankAnimal: Animal = {
 };
 
 function money(n: number) {
+  // plain spaces (not non-breaking) so long amounts can wrap inside narrow cards
   return new Intl.NumberFormat('en-KE', {
     style: 'currency',
     currency: 'KES',
     maximumFractionDigits: 0,
-  }).format(n || 0);
+  }).format(n || 0).replace(/[\u00a0\u202f]/g, ' ');
 }
 function dateText(s: string) {
   return s
@@ -505,9 +506,9 @@ export default function App() {
           <button className="md:hidden p-1" aria-label="Open menu" onClick={() => setMobile(true)}>
             <Menu />
           </button>
-          <img src="/resources/mkulima-logo.png" alt="Mkulima farm animals logo" className="w-10 h-10 sm:w-12 sm:h-12 object-contain rounded-lg bg-white border border-stone-200 p-0.5 shrink-0" />
+          <img src="/resources/mkulima-logo.png" alt="Mkulima farm animals logo" className="hidden sm:block w-10 h-10 sm:w-12 sm:h-12 object-contain rounded-lg bg-white border border-stone-200 p-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-xs text-emerald-700 font-semibold">Mkulima Farm Manager</div>
+            <div className="hidden sm:block text-xs text-emerald-700 font-semibold">Mkulima Farm Manager</div>
             <h1 className="font-black text-xl truncate">{page}</h1>
           </div>
           <div className="hidden lg:block text-right mr-2"><div className="text-xs text-slate-500">Signed in as</div><div className="text-sm font-semibold max-w-52 truncate">{authUser.name || authUser.email}</div></div>
@@ -559,7 +560,7 @@ export default function App() {
             <span className="hidden sm:inline">Poultry batch</span>
           </button>}
         </header>
-        <div className="p-3 pb-24 sm:p-4 sm:pb-24 md:p-8 max-w-7xl mx-auto">
+        <div className="p-3 pb-24 sm:p-4 sm:pb-24 md:p-8 max-w-7xl mx-auto overflow-x-clip">
           {error && (
             <div className="bg-red-50 text-red-700 border border-red-200 p-3 rounded-xl mb-5">
               {error}
@@ -704,7 +705,9 @@ export default function App() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   <Card label="Spent on birds" value={money(birdSpent)} />
                   <Card label="Birds bought" value={String(birdCount)} />
-                  <Card label="Average per bird" value={birdCount ? money(Math.round(birdSpent / birdCount)) : '—'} />
+                  <div className="col-span-2 md:col-span-1 min-w-0">
+  <Card label="Average per bird" value={birdCount ? money(Math.round(birdSpent / birdCount)) : '—'} />
+                  </div>
                 </div>
                 <Table
                   title="Bird purchases"
@@ -728,7 +731,9 @@ export default function App() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   <Card label="Feed eaten this month" value={pfMonth + ' kg'} />
                   <Card label="Last 7 days" value={pfWeek + ' kg'} />
-                  <Card label="Total recorded" value={pfTotal + ' kg'} />
+                  <div className="col-span-2 md:col-span-1 min-w-0">
+  <Card label="Total recorded" value={pfTotal + ' kg'} />
+                  </div>
                 </div>
                 <Table
                   title="Feed consumed"
@@ -844,10 +849,10 @@ export default function App() {
           )}
           {page === 'Finances' && (
             <>
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                 <Card label="Income" value={money(shownIncome)} />
                 <Card label="Expenses" value={money(shownExpense)} />
-                <Card label="Net" value={money(shownIncome - shownExpense)} />
+                <div className="col-span-2 sm:col-span-1 min-w-0"><Card label="Net" value={money(shownIncome - shownExpense)} /></div>
               </div>
               <div className="bg-white border rounded-2xl p-3 sm:p-4 mb-4 grid sm:grid-cols-2 lg:grid-cols-6 gap-2 text-sm">
                 <input value={finF.q} onChange={e => setFinF({ ...finF, q: e.target.value })} placeholder="Search description or category" className="border rounded-xl px-3 py-2 lg:col-span-2" />
@@ -1416,7 +1421,7 @@ function Dashboard(p: any) {
       {q.children}
     </div>
   );
-  const Mini = (q: { v: string; l: string }) => <div className="rounded-xl bg-stone-50 px-3 py-2"><div className="text-lg font-black leading-tight">{q.v}</div><div className="text-[11px] text-slate-500">{q.l}</div></div>;
+  const Mini = (q: { v: string; l: string }) => <div className="rounded-xl bg-stone-50 px-3 py-2"><div className="text-base sm:text-lg font-black leading-tight break-words">{q.v}</div><div className="text-[11px] text-slate-500">{q.l}</div></div>;
   const LV: Record<string, string> = { danger: 'bg-rose-50 text-rose-800 border-rose-200', warn: 'bg-amber-50 text-amber-900 border-amber-200', info: 'bg-sky-50 text-sky-900 border-sky-200' };
   return (
     <div className="space-y-4">
@@ -1460,7 +1465,7 @@ function Dashboard(p: any) {
         {stats.map(([Icon, bg, value, label, page]) => (
           <button key={label} onClick={() => p.setPage(page)} className="text-left bg-white border rounded-2xl p-4 hover:shadow-md transition-shadow">
             <span className={'w-9 h-9 rounded-xl grid place-items-center text-white ' + bg}><Icon size={18} /></span>
-            <div className="text-xl sm:text-2xl font-black mt-3 leading-none">{value}</div>
+            <div className="text-lg sm:text-2xl font-black mt-3 leading-tight break-words">{value}</div>
             <div className="text-[11px] uppercase tracking-wider text-slate-500 mt-1.5">{label}</div>
           </button>
         ))}
@@ -1498,7 +1503,7 @@ function Dashboard(p: any) {
           </div>
         </Panel>
         <Panel title="Finances" page="Finances">
-          <div className="flex items-baseline gap-3 mb-2"><span className={'text-2xl font-black ' + (cur.income - cur.expense < 0 ? 'text-rose-600' : '')}>{money(cur.income - cur.expense)}</span><span className="text-xs text-slate-500">net this month</span></div>
+          <div className="flex items-baseline gap-3 mb-2"><span className={'text-xl sm:text-2xl font-black break-words ' + (cur.income - cur.expense < 0 ? 'text-rose-600' : '')}>{money(cur.income - cur.expense)}</span><span className="text-xs text-slate-500">net this month</span></div>
           <GroupedBars aName="Income" bName="Spend" data={monthly.map(m => ({ label: monthLabel(m.month), a: m.income, b: m.expense }))} />
           {topCats.length > 0 && <p className="text-xs text-slate-500 mt-2">Top spending: {topCats.map(([c, v]) => c + ' ' + money(v)).join(' · ')}</p>}
         </Panel>
@@ -1818,9 +1823,9 @@ function Table(p: any) {
 }
 function Card(p: any) {
   return (
-    <div className="bg-white border rounded-2xl p-5">
-      <div className="text-sm text-slate-500">{p.label}</div>
-      <div className="text-2xl font-black mt-2">{p.value}</div>
+    <div className="bg-white border rounded-2xl p-4 sm:p-5 min-w-0">
+      <div className="text-sm text-slate-500 break-words">{p.label}</div>
+      <div className="text-lg sm:text-xl xl:text-2xl font-black mt-2 leading-tight break-words">{p.value}</div>
     </div>
   );
 }
@@ -1962,7 +1967,7 @@ function StatCard({ icon: Icon, label, value }: { icon: any; label: string; valu
   return (
     <div className="bg-white border rounded-2xl p-5">
       <div className="flex items-center gap-2 text-sm text-slate-500"><Icon size={18} />{label}</div>
-      <div className="text-3xl font-black mt-3">{value}</div>
+      <div className="text-2xl sm:text-3xl font-black mt-3 break-words">{value}</div>
     </div>
   );
 }
