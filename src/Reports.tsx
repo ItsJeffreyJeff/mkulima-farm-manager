@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react';
 import { Download, Printer } from 'lucide-react';
 import { GroupedBars } from './charts';
 import { adg } from './breeding';
-import { animalType, buildNotices, categoryTotals, dueItems, enterpriseSummary, expectedBirths, inRange, lastMonths, lastWeighed, monthLabel, monthlyFinance, todayISO, type Rec } from './analytics';
+import { animalType, buildNotices, cropSummary, harvestText, categoryTotals, dueItems, enterpriseSummary, expectedBirths, inRange, lastMonths, lastWeighed, monthLabel, monthlyFinance, todayISO, type Rec } from './analytics';
 
 const money = (n: number) => 'KSh ' + Math.round(n || 0).toLocaleString().replace(/[\u00a0\u202f]/g, ' ');
 const kg = (n: number) => Math.round(n * 10) / 10 + ' kg';
 const sum = (rows: Rec[], f: string) => rows.reduce((s, x) => s + Number(x[f] || 0), 0);
 const dt = (s: string) => (s ? new Date(String(s).slice(0, 10) + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—');
-const TABS = ['Overview', 'Livestock', 'Breeding & health', 'Poultry', 'Finance', 'Export'] as const;
+const TABS = ['Overview', 'Livestock', 'Breeding & health', 'Poultry', 'Crops', 'Finance', 'Export'] as const;
 const LEVEL: Record<string, string> = { danger: 'bg-rose-50 text-rose-700', warn: 'bg-amber-50 text-amber-800', info: 'bg-sky-50 text-sky-800' };
 
 function rowsToObjects(rows: Rec[]) {
@@ -73,7 +73,7 @@ export default function Reports({ data, initialTab }: { data: Record<string, Rec
     try {
       const XLSX = await import('xlsx');
       const wb = XLSX.utils.book_new();
-      const sets: [string, Rec[]][] = [['Livestock', d.animals], ['Poultry', d.poultry], ['Weights', d.weights], ['Health', d.health], ['Events', d.events], ['Finances', d.finance], ['Production', d.production], ['Feed', d.feed], ['Bird purchases', d.birdBuys], ['Poultry feed eaten', d.poultryFeed]];
+      const sets: [string, Rec[]][] = [['Livestock', d.animals], ['Poultry', d.poultry], ['Weights', d.weights], ['Health', d.health], ['Events', d.events], ['Finances', d.finance], ['Production', d.production], ['Feed', d.feed], ['Bird purchases', d.birdBuys], ['Poultry feed eaten', d.poultryFeed], ['Crops', d.crops], ['Crop activities', d.cropActs]];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(enterpriseSummary(d.finance || []).map(e => ({ Enterprise: e.enterprise, Income: e.income, Expenses: e.expense, Profit: e.net }))), 'Profit and loss');
       sets.forEach(([name, rows]) => { const o = rowsToObjects(rows || []); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(o.length ? o : [{ Note: 'No records yet' }]), name.slice(0, 31)); });
       XLSX.writeFile(wb, 'mkulima-farm-data-' + today + '.xlsx');
@@ -180,6 +180,35 @@ export default function Reports({ data, initialTab }: { data: Record<string, Rec
         );
       })()}
 
+      {tab === 'Crops' && (() => {
+        const acts = R(d.cropActs || []);
+        const rows = cropSummary(d.crops || [], acts);
+        const spent = sum(acts, 'cost'), sales = sum(acts, 'saleIncome');
+        const byType = Object.entries(acts.reduce((m: Record<string, number>, a) => { if (Number(a.cost) > 0) m[a.type] = (m[a.type] || 0) + Number(a.cost); return m; }, {})).sort((x, y) => y[1] - x[1]) as [string, number][];
+        const live = (d.crops || []).filter(c => c.status === 'Growing' || c.status === 'Planned');
+        const area = live.reduce((s, c) => s + Number(c.area || 0), 0);
+        return (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Stat label="Active crops" value={String(live.length)} note={Math.round(area * 100) / 100 + ' acres'} /><Stat label="Spent on crops" value={money(spent)} />
+              <Stat label="Crop sales" value={money(sales)} /><Stat label="Crop profit" value={money(sales - spent)} />
+            </div>
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Panel title="Crop by crop" sub="Costs, harvest and profit from the activities in this period">
+                <Table heads={['Crop', 'Field', 'Acres', 'Status', 'Spent', 'Harvested', 'Sales', 'Profit', 'Cost/acre']} rows={rows.map(({ crop: c, cost, income, profit, harvest }) => [c.name, c.field || '—', c.area || '—', c.status, money(cost), harvestText(harvest) || '—', income ? money(income) : '—', cost || income ? money(profit) : '—', Number(c.area) > 0 && cost ? money(cost / Number(c.area)) : '—'])} empty="No crops recorded yet." />
+              </Panel>
+              <Panel title="Where crop money goes" sub="Cost by activity"><Bars rows={byType} fmt={money} color="bg-amber-500" /></Panel>
+              <Panel title="Yield per acre" sub="Harvests recorded in kilograms">
+                <Table heads={['Crop', 'Harvested', 'Acres', 'Yield per acre']} rows={rows.filter(x => x.harvest.kg && Number(x.crop.area) > 0).map(x => [x.crop.name, x.harvest.kg + ' kg', x.crop.area, Math.round(x.harvest.kg / Number(x.crop.area)) + ' kg'])} empty="Record a harvest in kilograms, with the area of the crop, to see yield per acre." />
+              </Panel>
+              <Panel title="Activity log" sub="Latest 10 activities">
+                <Table heads={['Date', 'Crop', 'Activity', 'Amount', 'Cost']} rows={[...acts].sort((x, y) => String(y.date).localeCompare(String(x.date))).slice(0, 10).map(a => [dt(a.date), (d.crops || []).find(c => c.id === a.cropId)?.name || '—', a.type + (a.item ? ' · ' + a.item : ''), a.quantity ? a.quantity + ' ' + (a.unit || '') : '—', Number(a.cost) ? money(Number(a.cost)) : '—'])} empty="No activities in this period." />
+              </Panel>
+            </div>
+          </>
+        );
+      })()}
+
       {tab === 'Finance' && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -205,7 +234,7 @@ export default function Reports({ data, initialTab }: { data: Record<string, Rec
             <button disabled={busy} onClick={excel} className="flex gap-2 items-center bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold disabled:opacity-60"><Download size={16} />{busy ? 'Preparing…' : 'Download Excel (.xlsx)'}</button>
           </Panel>
           <Panel title="CSV files" sub="One file per record type, opens in Excel or Google Sheets">
-            <div className="flex flex-wrap gap-2">{([['Livestock', d.animals], ['Poultry', d.poultry], ['Weights', d.weights], ['Health', d.health], ['Events', d.events], ['Finances', d.finance], ['Production', d.production], ['Feed', d.feed], ['Bird purchases', d.birdBuys], ['Poultry feed eaten', d.poultryFeed]] as [string, Rec[]][]).map(([k, rows]) => (
+            <div className="flex flex-wrap gap-2">{([['Livestock', d.animals], ['Poultry', d.poultry], ['Weights', d.weights], ['Health', d.health], ['Events', d.events], ['Finances', d.finance], ['Production', d.production], ['Feed', d.feed], ['Bird purchases', d.birdBuys], ['Poultry feed eaten', d.poultryFeed], ['Crops', d.crops], ['Crop activities', d.cropActs]] as [string, Rec[]][]).map(([k, rows]) => (
               <button key={k} onClick={() => downloadCSV(k, rows || [])} className="border rounded-xl px-3 py-2 text-sm font-semibold flex gap-2 items-center"><Download size={14} />{k}</button>
             ))}</div>
           </Panel>

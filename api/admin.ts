@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const KINDS = ['animals', 'poultry', 'weights', 'health', 'events', 'finance', 'production', 'feed', 'birdpurchases', 'poultryfeed'];
+const KINDS = ['animals', 'poultry', 'weights', 'health', 'events', 'finance', 'production', 'feed', 'birdpurchases', 'poultryfeed', 'crops', 'cropactivities'];
 
 export default async function handler(req: any, res: any) {
   try { return await run(req, res); } catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }

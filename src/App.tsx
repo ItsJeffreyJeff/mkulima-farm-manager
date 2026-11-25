@@ -2,10 +2,11 @@ import { Fragment, useEffect, useState } from 'react';
 import { api, auth } from './lib/backend';
 import Marketplace from './Marketplace';
 import Community from './Community';
+import Crops from './Crops';
 import { MiniChart, GroupedBars } from './charts';
 import ReportsHub from './Reports';
 import GlobalSearch from './GlobalSearch';
-import { buildNotices, dueItems, expectedBirths, lastMonths, monthlyFinance, monthLabel, categoryTotals } from './analytics';
+import { buildNotices, dueItems, expectedBirths, lastMonths, monthlyFinance, monthLabel, categoryTotals, cropSummary, cropsDue, harvestText } from './analytics';
 import { GESTATION, CYCLE, MALE_TYPES, FEMALE_TYPES, addDays, inbreedingWarning, adg } from './breeding';
 import {
   Home,
@@ -30,6 +31,7 @@ import {
   Wheat,
   FileBarChart,
   MoreVertical,
+  Sprout,
   Bell,
   MoreHorizontal,
   ChevronDown,
@@ -131,6 +133,8 @@ export default function App() {
     [feed, setFeed] = useState<RecordItem[]>([]),
     [birdBuys, setBirdBuys] = useState<RecordItem[]>([]),
     [poultryFeed, setPoultryFeed] = useState<RecordItem[]>([]),
+    [crops, setCrops] = useState<RecordItem[]>([]),
+    [cropActs, setCropActs] = useState<RecordItem[]>([]),
     [showN, setShowN] = useState(false),
     [openG, setOpenG] = useState<Record<string, boolean>>({}),
     [finF, setFinF] = useState({ type: 'All', cat: 'All', ent: 'All', q: '', from: '', to: '' }),
@@ -142,7 +146,7 @@ export default function App() {
     [search, setSearch] = useState('');
   async function load() {
     try {
-      const [a, p, w, h, e, f, pr, fd, bp, pf] = await Promise.all([
+      const [a, p, w, h, e, f, pr, fd, bp, pf, cr, ca] = await Promise.all([
         api.get('/api/animals'),
         api.get('/api/poultry'),
         api.get('/api/weights'),
@@ -153,6 +157,8 @@ export default function App() {
         api.get('/api/feed'),
         api.get('/api/birdpurchases'),
         api.get('/api/poultryfeed'),
+        api.get('/api/crops'),
+        api.get('/api/cropactivities'),
       ]);
       setAnimals(a.data.items || []);
       setPoultry(p.data.items || []);
@@ -164,6 +170,8 @@ export default function App() {
       setFeed(fd.data.items || []);
       setBirdBuys(bp.data.items || []);
       setPoultryFeed(pf.data.items || []);
+      setCrops(cr.data.items || []);
+      setCropActs(ca.data.items || []);
     } catch (e) {
       setError('Could not load farm records.');
     }
@@ -237,7 +245,7 @@ export default function App() {
     } finally { setAuthBusy(false); setAuthChecked(true); }
   }
   async function signOut() {
-    await auth.signOut(); setAuthUser(null); setAnimals([]); setPoultry([]); setWeights([]); setHealth([]); setEvents([]); setFinance([]); setProduction([]); setFeed([]); setBirdBuys([]); setPoultryFeed([]); setPage('Dashboard');
+    await auth.signOut(); setAuthUser(null); setAnimals([]); setPoultry([]); setWeights([]); setHealth([]); setEvents([]); setFinance([]); setProduction([]); setFeed([]); setBirdBuys([]); setPoultryFeed([]); setCrops([]); setCropActs([]); setPage('Dashboard');
   }
   async function saveAnimal(e: any) {
     e.preventDefault();
@@ -324,7 +332,7 @@ export default function App() {
   const matingWarn = inbreedingWarning(animal.id || '__new', animal.matingSireId, pool);
   const sireOptions = animals.filter(x => x.id !== animal.id && x.species === animal.species && MALE_TYPES.includes(x.sex));
   const damOptions = animals.filter(x => x.id !== animal.id && x.species === animal.species && FEMALE_TYPES.includes(x.sex));
-  const notices = buildNotices({ animals, health, poultry, weights, finance });
+  const notices = buildNotices({ animals, health, poultry, weights, finance, crops });
   const alertCount = notices.filter(n => n.level !== 'info').length;
   const day10 = (x: any) => String(x.date || '').slice(0, 10);
   const financeShown = financeSorted.filter(x =>
@@ -333,7 +341,7 @@ export default function App() {
     (!finF.q || (String(x.description || '') + ' ' + String(x.category || '')).toLowerCase().includes(finF.q.toLowerCase())));
   const shownIncome = financeShown.filter(x => x.type === 'income').reduce((s, x) => s + Number(x.amount || 0), 0);
   const shownExpense = financeShown.filter(x => x.type === 'expense').reduce((s, x) => s + Number(x.amount || 0), 0);
-  const finCats = Array.from(new Set(['Feed', 'Animals', 'Poultry', 'Veterinary', 'Vaccines', 'Equipment', 'Transport', 'Labour', 'Sales', 'Other', ...finance.map(x => String(x.category || ''))].filter(Boolean)));
+  const finCats = Array.from(new Set(['Feed', 'Animals', 'Poultry', 'Crops', 'Seeds', 'Fertiliser', 'Chemicals', 'Veterinary', 'Vaccines', 'Equipment', 'Transport', 'Labour', 'Sales', 'Other', ...finance.map(x => String(x.category || ''))].filter(Boolean)));
   const birdSpent = birdBuys.reduce((s, x) => s + Number(x.amount || 0), 0);
   const birdCount = birdBuys.reduce((s, x) => s + Number(x.birds || 0), 0);
   const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
@@ -364,6 +372,7 @@ export default function App() {
     ['Dashboard', Home],
     ['Livestock', PawPrint],
     ['Poultry', Activity],
+    ['Crops', Sprout],
     ['Health', ShieldCheck],
     ['Events', Activity],
     ['Finances', CircleDollarSign],
@@ -376,7 +385,7 @@ export default function App() {
     ...(authUser?.role === 'admin' ? [['Admin', Users] as any] : []),
   ];
   const GROUPS: [string, string[]][] = [
-    ['Farm', ['Dashboard', 'Livestock', 'Poultry', 'Health', 'Events']],
+    ['Farm', ['Dashboard', 'Livestock', 'Poultry', 'Crops', 'Health', 'Events']],
     ['Production & feed', ['Production', 'Feed']],
     ['Money & reports', ['Finances', 'Reports']],
     ['Market & community', ['Marketplace', 'Community']],
@@ -512,7 +521,7 @@ export default function App() {
             <h1 className="font-black text-xl truncate">{page}</h1>
           </div>
           <div className="hidden lg:block text-right mr-2"><div className="text-xs text-slate-500">Signed in as</div><div className="text-sm font-semibold max-w-52 truncate">{authUser.name || authUser.email}</div></div>
-          <GlobalSearch data={{ animals, poultry, health, finance, production, feed, events }} onGo={p => setPage(p)} />
+          <GlobalSearch data={{ animals, poultry, health, finance, production, feed, events, crops, cropActs }} onGo={p => setPage(p)} />
           <div className="relative">
             <button onClick={() => setShowN(!showN)} className="relative bg-white border p-2.5 rounded-xl" aria-label="Notifications" title="Notifications">
               <Bell size={18} />
@@ -619,9 +628,10 @@ export default function App() {
             </>
           )}
           {page === 'Reports' && (
-            <ReportsHub data={{ animals, poultry, weights, health, events, finance: financeSorted, production, feed, birdBuys, poultryFeed }} />
+            <ReportsHub data={{ animals, poultry, weights, health, events, finance: financeSorted, production, feed, birdBuys, poultryFeed, crops, cropActs }} />
           )}
           {page === 'Marketplace' && <Marketplace isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
+          {page === 'Crops' && <Crops crops={crops} acts={cropActs} onChange={load} />}
           {page === 'Community' && <Community isAdmin={authUser?.role === 'admin'} userId={authUser?.userId} />}
           {page === 'About' && <About />}
           {page === 'Admin' && authUser.role === 'admin' && (
@@ -657,6 +667,8 @@ export default function App() {
               poultryFeed={poultryFeed}
               birdBuys={birdBuys}
               notices={notices}
+              crops={crops}
+              cropActs={cropActs}
               name={(() => { const n = String(authUser?.name || String(authUser?.email || '').split('@')[0] || ''); return n.charAt(0).toUpperCase() + n.slice(1); })()}
               onRename={async (n: string) => { await auth.updateName(n); setAuthUser({ ...authUser, name: n }); }}
               setPage={setPage}
@@ -1277,6 +1289,10 @@ export default function App() {
                   'Feed',
                   'Animals',
                   'Poultry',
+                  'Crops',
+                  'Seeds',
+                  'Fertiliser',
+                  'Chemicals',
                   'Veterinary',
                   'Vaccines',
                   'Equipment',
@@ -1351,6 +1367,7 @@ function About() {
         <InfoCard title="💰 Farm finances" text="Track farm income and expenses. When you register a purchased animal, its purchase price is automatically recorded as an animal-purchase expense." />
         <InfoCard title="🔔 Critical reminders" text="The system helps send critical reminders by email, such as the next vaccination or deworming date, so important health work is never forgotten. You get a reminder 3 days before and again on the due date." />
         <InfoCard title="💬 Community & experts" text="Ask questions and get live answers from other farmers and admins. Vets and advisors can register their location and contacts so farmers near them can reach out quickly." />
+        <InfoCard title="🌱 Crops" text="Record your fields and crops, then log what you put in and take out: seeds, fertiliser, weeding, spraying, labour and harvests, with amounts and costs. Costs and sales flow into Finances and Reports, and harvest dates appear as reminders." />
         <InfoCard title="🛒 Marketplace" text="Post animals, produce and equipment for sale with photos. Listings go live after you pay a small listing fee and an admin approves them, which keeps fake adverts out." />
         <InfoCard title="🥛 Milk & egg production" text="Record daily milk by animal and eggs by poultry batch, and see monthly totals at a glance." />
         <InfoCard title="🌾 Feed tracking" text="Log feed type, quantity and cost. When you enter a cost, it is automatically added to your expenses as a feed expense." />
@@ -1406,6 +1423,10 @@ function Dashboard(p: any) {
   const cur = monthly[monthly.length - 1];
   const topCats = categoryTotals(p.finance || [], 'expense', month + '-01', month + '-31').slice(0, 3);
   const feedSpend = categoryTotals(p.finance || [], 'expense', month + '-01', month + '-31').find(c => c[0] === 'Feed')?.[1] || 0;
+  const cropRows = cropSummary(p.crops || [], p.cropActs || []);
+  const activeCrops = (p.crops || []).filter((c: any) => c.status === 'Growing' || c.status === 'Planned');
+  const cropArea = Math.round(activeCrops.reduce((s: number, c: any) => s + Number(c.area || 0), 0) * 100) / 100;
+  const harvests = cropsDue(p.crops || [], today, 30).slice(0, 4);
   const mortality = p.animals.length ? Math.round((p.dead / p.animals.length) * 1000) / 10 : 0;
   const stats: [any, string, string, string, string][] = [
     [PawPrint, 'bg-emerald-800', String(active.length), 'Animals', 'Livestock'],
@@ -1502,6 +1523,15 @@ function Dashboard(p: any) {
             <Mini v={kgIn(feedM, 'quantity') + ' kg'} l="Bought this month" /><Mini v={money(feedM.reduce((s: number, x: any) => s + Number(x.cost || 0), 0))} l="Feed cost" /><Mini v={kgIn(pfM, 'kg') + ' kg'} l="Poultry ate this month" /><Mini v={cur.expense ? Math.round((feedSpend / cur.expense) * 100) + '%' : '—'} l="Of this month's spend" />
           </div>
         </Panel>
+        <Panel title="Crops" page="Crops">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <Mini v={String(activeCrops.length)} l="Active crops" /><Mini v={cropArea + ' acres'} l="Under crops" /><Mini v={String(cropsDue(p.crops || [], today, 30).length)} l="Harvests in 30 days" /><Mini v={money(cropRows.reduce((s, r) => s + r.cost, 0))} l="Spent on crops" />
+          </div>
+          {harvests.length ? harvests.map(h => (
+            <div key={h.crop.id} className="flex justify-between gap-3 py-1.5 border-t text-sm"><span><b>{h.crop.name}</b>{h.crop.field ? ' · ' + h.crop.field : ''}</span><span className={h.days < 0 ? 'text-rose-600 font-semibold' : 'text-slate-600'}>{h.days < 0 ? Math.abs(h.days) + ' days overdue' : h.days === 0 ? 'Today' : 'in ' + h.days + ' days'}</span></div>
+          )) : <p className="text-sm text-slate-500">{(p.crops || []).length ? 'No harvests due in the next 30 days.' : 'No crops recorded yet. Add your first crop to track planting, inputs and harvests.'}</p>}
+          {cropRows.some(r => Object.keys(r.harvest).length) && <p className="text-xs text-slate-500 mt-2">Harvested so far: {cropRows.filter(r => Object.keys(r.harvest).length).slice(0, 3).map(r => r.crop.name + ' ' + harvestText(r.harvest)).join(' · ')}</p>}
+        </Panel>
         <Panel title="Finances" page="Finances">
           <div className="flex items-baseline gap-3 mb-2"><span className={'text-xl sm:text-2xl font-black break-words ' + (cur.income - cur.expense < 0 ? 'text-rose-600' : '')}>{money(cur.income - cur.expense)}</span><span className="text-xs text-slate-500">net this month</span></div>
           <GroupedBars aName="Income" bName="Spend" data={monthly.map(m => ({ label: monthLabel(m.month), a: m.income, b: m.expense }))} />
@@ -1509,7 +1539,7 @@ function Dashboard(p: any) {
         </Panel>
       </div>
       <div className="flex flex-wrap gap-2">
-        {([[PawPrint, 'Livestock register', 'Livestock'], [ShieldCheck, 'Health records', 'Health'], [CircleDollarSign, 'Record finances', 'Finances'], [Store, 'Marketplace', 'Marketplace']] as [any, string, string][]).map(([Icon, t, pg]) => (
+        {([[PawPrint, 'Livestock register', 'Livestock'], [ShieldCheck, 'Health records', 'Health'], [CircleDollarSign, 'Record finances', 'Finances'], [Sprout, 'Crops', 'Crops'], [Store, 'Marketplace', 'Marketplace']] as [any, string, string][]).map(([Icon, t, pg]) => (
           <button key={t} onClick={() => p.setPage(pg)} className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 text-sm font-semibold hover:bg-stone-50"><Icon size={16} className="text-emerald-700" />{t}</button>
         ))}
       </div>

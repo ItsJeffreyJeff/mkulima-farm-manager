@@ -15,7 +15,7 @@ const ADMINS = String(import.meta.env.VITE_ADMIN_EMAILS || '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const SECTION: Record<string, string> = {
   animals: 'Livestock', poultry: 'Poultry', weights: 'Weights', health: 'Health',
-  events: 'Events', finance: 'Finances', production: 'Production', feed: 'Feed', birdpurchases: 'Poultry purchases', poultryfeed: 'Poultry feed',
+  events: 'Events', finance: 'Finances', production: 'Production', feed: 'Feed', birdpurchases: 'Poultry purchases', poultryfeed: 'Poultry feed', crops: 'Crops', cropactivities: 'Crop activities',
 };
 
 function check(kind: string, x: any) {
@@ -32,6 +32,8 @@ function check(kind: string, x: any) {
   if (kind === 'production' && (!x.date || !x.type || !(Number(x.quantity) > 0))) bad('Date, type and a quantity above zero are required.');
   if (kind === 'birdpurchases' && (!x.date || !(Number(x.birds) > 0) || !(Number(x.amount) > 0))) bad('Date, number of birds and the amount paid are required.');
   if (kind === 'poultryfeed' && (!x.date || !(Number(x.kg) > 0))) bad('Date and the amount of feed in kg are required.');
+  if (kind === 'crops' && (!x.name || !String(x.name).trim())) bad('Enter the name of the crop.');
+  if (kind === 'cropactivities' && (!x.cropId || !x.date || !x.type)) bad('Choose the crop, the date and the type of activity.');
   if (kind === 'feed' && (!x.date || !x.feedType || !(Number(x.quantity) > 0))) bad('Date, feed type and a quantity above zero are required.');
 }
 const strip = (x: any) => { const { id, userId, ...rest } = x || {}; void id; void userId; return rest; };

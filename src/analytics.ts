@@ -74,7 +74,7 @@ export function lastWeighed(weights: Rec[], animalId: string): string {
   return weights.filter(w => w.animalId === animalId).map(w => day(w.date)).sort().pop() || '';
 }
 
-export function buildNotices(i: { animals: Rec[]; health: Rec[]; poultry: Rec[]; weights: Rec[]; finance: Rec[]; today?: string }): Notice[] {
+export function buildNotices(i: { animals: Rec[]; health: Rec[]; poultry: Rec[]; weights: Rec[]; finance: Rec[]; crops?: Rec[]; today?: string }): Notice[] {
   const today = i.today || todayISO();
   const out: Notice[] = [];
   const dues = dueItems(i.health, i.animals, today);
@@ -89,6 +89,11 @@ export function buildNotices(i: { animals: Rec[]; health: Rec[]; poultry: Rec[];
     const start = Number(b.initialBirds || 0), now = Number(b.currentBirds || start);
     if (start >= 10 && now < start) { const loss = Math.round(((start - now) / start) * 100); if (loss >= 10) out.push({ id: 'mort-' + b.id, level: 'warn', title: 'High bird losses', text: b.batch + ' has lost ' + loss + '% of its birds (' + (start - now) + ' of ' + start + ')', page: 'Poultry' }); }
   });
+  cropsDue(i.crops || [], today, 14).forEach(c => out.push({
+    id: 'crop-' + c.crop.id, level: c.days < 0 ? 'danger' : 'warn',
+    title: c.days < 0 ? 'Harvest overdue' : c.days === 0 ? 'Harvest due today' : 'Harvest due in ' + c.days + (c.days === 1 ? ' day' : ' days'),
+    text: c.crop.name + (c.crop.field ? ' (' + c.crop.field + ')' : '') + ' was expected ' + c.due, page: 'Crops',
+  }));
   const active = i.animals.filter(a => a.status === 'Active');
   const stale = active.filter(a => { const w = lastWeighed(i.weights, a.id); return !w || daysBetween(w, today) > 60; });
   if (active.length && stale.length) out.push({ id: 'weigh', level: 'info', title: 'Weighing overdue', text: stale.length + (stale.length === 1 ? ' animal has' : ' animals have') + ' not been weighed in 60 days', page: 'Livestock' });
@@ -109,3 +114,24 @@ export function animalType(a: Rec): string {
   if (a.species === 'Cattle') return f ? 'Cow' : m ? 'Bull' : 'Cattle';
   return a.species || 'Animal';
 }
+
+// ---------- Crops ----------
+export type CropRow = { crop: Rec; cost: number; income: number; profit: number; harvest: Record<string, number>; activities: number };
+export function cropSummary(crops: Rec[], acts: Rec[]): CropRow[] {
+  return crops.map(crop => {
+    const mine = acts.filter(a => a.cropId === crop.id);
+    const harvest: Record<string, number> = {};
+    mine.filter(a => a.type === 'Harvesting' && Number(a.quantity) > 0).forEach(a => { const u = a.unit || 'kg'; harvest[u] = (harvest[u] || 0) + Number(a.quantity); });
+    const cost = mine.reduce((s, a) => s + Number(a.cost || 0), 0);
+    const income = mine.reduce((s, a) => s + Number(a.saleIncome || 0), 0);
+    return { crop, cost, income, profit: income - cost, harvest, activities: mine.length };
+  });
+}
+export function cropsDue(crops: Rec[], today = todayISO(), withinDays = 14) {
+  return crops
+    .filter(c => (c.status === 'Growing' || c.status === 'Planned') && c.expectedHarvest)
+    .map(c => ({ crop: c, due: day(c.expectedHarvest), days: daysBetween(today, day(c.expectedHarvest)) }))
+    .filter(x => x.days <= withinDays)
+    .sort((a, b) => a.due.localeCompare(b.due));
+}
+export const harvestText = (h: Record<string, number>) => Object.entries(h).map(([u, q]) => Math.round(q * 10) / 10 + ' ' + u).join(' + ');

@@ -17,6 +17,10 @@ export default function GlobalSearch({ data, onGo }: { data: Record<string, Rec[
     ['Finances', 'Finances', (data.finance || []).filter(f => hit(f.description, f.category, f.enterprise, f.amount)).map(f => [f.description || f.category, String(f.date || '').slice(0, 10) + ' · ' + f.category + ' · ' + (f.type === 'income' ? '+' : '-') + money(f.amount)] as [string, string])],
     ['Production', 'Production', (data.production || []).filter(p => hit(p.type, p.batch, p.notes, tag(p.animalId))).map(p => [p.type + ' · ' + p.quantity, String(p.date || '').slice(0, 10) + (p.notes ? ' · ' + p.notes : '')] as [string, string])],
     ['Feed', 'Feed', (data.feed || []).filter(f => hit(f.feedType, f.group, f.notes)).map(f => [f.feedType + ' · ' + f.quantity + ' kg', String(f.date || '').slice(0, 10) + ' · ' + (f.group || '')] as [string, string])],
+    ['Crops', 'Crops', [
+      ...(data.crops || []).filter(c => hit(c.name, c.variety, c.field, c.status, c.notes)).map(c => [c.name + (c.variety ? ' · ' + c.variety : ''), [c.field, c.area ? c.area + ' acres' : '', c.status].filter(Boolean).join(' · ')] as [string, string]),
+      ...(data.cropActs || []).filter(x => hit(x.type, x.item, x.notes)).map(x => [x.type + (x.item ? ' · ' + x.item : ''), String(x.date || '').slice(0, 10) + (x.quantity ? ' · ' + x.quantity + ' ' + (x.unit || '') : '')] as [string, string]),
+    ]],
     ['Events', 'Events', (data.events || []).filter(e => hit(e.type, e.details, e.outcome, tag(e.animalId))).map(e => [e.type + (tag(e.animalId) ? ' · ' + tag(e.animalId) : ''), String(e.date || '').slice(0, 10) + (e.outcome ? ' · ' + e.outcome : '')] as [string, string])],
   ];
   const total = groups.reduce((s, g) => s + g[2].length, 0);
