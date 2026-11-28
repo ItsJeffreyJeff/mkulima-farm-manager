@@ -3,6 +3,7 @@ import { api, auth } from './lib/backend';
 import Marketplace from './Marketplace';
 import Community from './Community';
 import Crops from './Crops';
+import { IOS_TIP, promptInstall, useInstall } from './pwa';
 import { MiniChart, GroupedBars } from './charts';
 import ReportsHub from './Reports';
 import GlobalSearch from './GlobalSearch';
@@ -332,6 +333,7 @@ export default function App() {
   const matingWarn = inbreedingWarning(animal.id || '__new', animal.matingSireId, pool);
   const sireOptions = animals.filter(x => x.id !== animal.id && x.species === animal.species && MALE_TYPES.includes(x.sex));
   const damOptions = animals.filter(x => x.id !== animal.id && x.species === animal.species && FEMALE_TYPES.includes(x.sex));
+  const install = useInstall();
   const notices = buildNotices({ animals, health, poultry, weights, finance, crops });
   const alertCount = notices.filter(n => n.level !== 'info').length;
   const day10 = (x: any) => String(x.date || '').slice(0, 10);
@@ -508,6 +510,11 @@ export default function App() {
             </div>
           );
         })}
+        {!install.installed && (install.canPrompt || install.ios) && (
+          <button onClick={() => (install.canPrompt ? promptInstall() : alert(IOS_TIP))} className="w-full flex gap-3 items-center px-3 py-2.5 rounded-xl mt-3 border border-emerald-500/40 text-emerald-300 hover:bg-slate-800">
+            <Download size={18} />Install app
+          </button>
+        )}
       </aside>
       {mobile && <div className="fixed inset-0 z-30 bg-slate-950/50 md:hidden" onClick={() => setMobile(false)} />}
       <main className="md:ml-64">
@@ -1368,6 +1375,7 @@ function About() {
         <InfoCard title="🔔 Critical reminders" text="The system helps send critical reminders by email, such as the next vaccination or deworming date, so important health work is never forgotten. You get a reminder 3 days before and again on the due date." />
         <InfoCard title="💬 Community & experts" text="Ask questions and get live answers from other farmers and admins. Vets and advisors can register their location and contacts so farmers near them can reach out quickly." />
         <InfoCard title="🌱 Crops" text="Record your fields and crops, then log what you put in and take out: seeds, fertiliser, weeding, spraying, labour and harvests, with amounts and costs. Costs and sales flow into Finances and Reports, and harvest dates appear as reminders." />
+        <InfoCard title="📲 Install the app" text="Install Mkulima on your phone or laptop. On Android or a laptop with Chrome or Edge, tap the Install button (or choose Install app in the browser menu). On iPhone, open the site in Safari, tap Share, then Add to Home Screen. It then opens full screen like any other app, and screens you have opened before still load without a connection. Saving new records needs the internet." />
         <InfoCard title="🛒 Marketplace" text="Post animals, produce and equipment for sale with photos. Listings go live after you pay a small listing fee and an admin approves them, which keeps fake adverts out." />
         <InfoCard title="🥛 Milk & egg production" text="Record daily milk by animal and eggs by poultry batch, and see monthly totals at a glance." />
         <InfoCard title="🌾 Feed tracking" text="Log feed type, quantity and cost. When you enter a cost, it is automatically added to your expenses as a feed expense." />
